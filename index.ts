@@ -47,6 +47,18 @@ async function main() {
   });
 
   console.log(`GET ${url} -> ${response.status}`);
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      console.error(
+        `No XBRL company facts found for CIK ${paddedCik}. Either the CIK is invalid, or the company has never filed XBRL data.`,
+      );
+    } else {
+      console.error(`Request failed with status ${response.status}.`);
+    }
+    process.exit(1);
+  }
+
   const data = await response.json();
   console.log('entityName:', data.entityName);
 
