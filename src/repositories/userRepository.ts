@@ -22,3 +22,15 @@ export async function createUser(email: string, passwordHash: string): Promise<U
     throw err;
   }
 }
+
+export interface UserWithPasswordHash extends UserRecord {
+  password_hash: string;
+}
+
+export async function getUserByEmail(email: string): Promise<UserWithPasswordHash | null> {
+  const result = await pool.query(
+    `SELECT id, email, password_hash, created_at FROM users WHERE email = $1`,
+    [email],
+  );
+  return result.rows[0] ?? null;
+}
