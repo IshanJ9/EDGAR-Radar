@@ -12,22 +12,22 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 
 **Build:**
 - [x] Scaffold project: `npm init`, TypeScript, `ts-node`, `tsconfig.json`
-- [ ] Initialize git, add a `.gitignore` (`node_modules/`, `.env`, `dist/`, logs), make the first commit
-- [ ] Create the GitHub repo (manually via github.com, or `gh repo create` if available) and push
-- [ ] Script accepts a CIK as a CLI argument
-- [ ] Calls `https://data.sec.gov/api/xbrl/companyfacts/CIK{10-digit-padded}.json` with a descriptive `User-Agent` header (your name/project + a real contact email)
-- [ ] Parses the response and prints the most recent `Revenues` and `NetIncomeLoss` values
-- [ ] Falls back to at least one alternate tag name when the primary one is missing (e.g. `RevenueFromContractWithCustomerExcludingAssessedTax`)
-- [ ] Handles a 404 (bad CIK) and a company with no XBRL data at all, without crashing
+- [x] Initialize git, add a `.gitignore` (`node_modules/`, `.env`, `dist/`, logs), make the first commit
+- [x] Create the GitHub repo (manually via github.com, or `gh repo create` if available) and push
+- [x] Script accepts a CIK as a CLI argument
+- [x] Calls `https://data.sec.gov/api/xbrl/companyfacts/CIK{10-digit-padded}.json` with a descriptive `User-Agent` header (your name/project + a real contact email)
+- [x] Parses the response and prints the most recent `Revenues` and `NetIncomeLoss` values
+- [x] Falls back to at least one alternate tag name when the primary one is missing (e.g. `RevenueFromContractWithCustomerExcludingAssessedTax`)
+- [x] Handles a 404 (bad CIK) and a company with no XBRL data at all, without crashing
 
 **Tech:** Node + TypeScript, `ts-node`, `axios` or `fetch`, `dotenv`
 
 **Do NOT use yet:** database, Express, queue, Docker, auth, scheduling
 
 **Test these failure cases:**
-- [ ] Nonexistent CIK
-- [ ] A company that reports no XBRL data
-- [ ] Request sent without a `User-Agent` (should 403)
+- [x] Nonexistent CIK
+- [x] A company that reports no XBRL data
+- [x] Request sent without a `User-Agent` (should 403)
 
 **Done when:** runs correctly against 5 different real companies, one of which fails gracefully.
 
