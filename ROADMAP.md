@@ -37,16 +37,16 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Goal:** a real Express + Postgres API wrapping Phase 0's logic.
 
 **Build:**
-- [ ] Install Express, `pg`, `zod`, `bcrypt`, `jsonwebtoken`
-- [ ] Stand up Postgres (Docker container or native Windows install), confirm connection
-- [ ] Set up `node-pg-migrate`; write first migration: `companies` table
-- [ ] Service/repository function that upserts a company + facts into Postgres (reusing Phase 0 logic)
-- [ ] `GET /companies/:cik` and `GET /companies/:cik/facts`
-- [ ] `users` table migration; `POST /auth/register` (bcrypt hash)
-- [ ] `POST /auth/login` issuing a JWT
-- [ ] JWT verification middleware
-- [ ] `watchlists` table migration; `GET/POST/DELETE /watchlist` behind the middleware
-- [ ] `zod` validation on every endpoint accepting a body
+- [x] Install Express, `pg`, `zod`, `bcrypt`, `jsonwebtoken`
+- [x] Stand up Postgres (Docker container or native Windows install), confirm connection
+- [x] Set up `node-pg-migrate`; write first migration: `companies` table
+- [x] Service/repository function that upserts a company + facts into Postgres (reusing Phase 0 logic)
+- [x] `GET /companies/:cik` and `GET /companies/:cik/facts`
+- [x] `users` table migration; `POST /auth/register` (bcrypt hash)
+- [x] `POST /auth/login` issuing a JWT
+- [x] JWT verification middleware
+- [x] `watchlists` table migration; `GET/POST/DELETE /watchlist` behind the middleware
+- [x] `zod` validation on every endpoint accepting a body
 
 **Tech:** Express, TypeScript, PostgreSQL, `node-pg-migrate` (or raw SQL migrations), `zod`, `bcrypt`, `jsonwebtoken`
 
@@ -55,10 +55,10 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Do NOT use yet:** Redis/queue, scheduling, full docker-compose stack, cloud deployment
 
 **Test these failure cases:**
-- [ ] Duplicate email registration
-- [ ] Expired/tampered JWT
-- [ ] SQL-injection attempt in a search param (confirm parameterized queries protect you)
-- [ ] Watchlisting the same company twice (should reject cleanly)
+- [x] Duplicate email registration
+- [x] Expired/tampered JWT
+- [x] SQL-injection attempt in a search param (confirm parameterized queries protect you)
+- [x] Watchlisting the same company twice (should reject cleanly)
 
 **Done when:** register → login → watchlist 3 companies → fetch their facts, all via curl/Postman, backed by Postgres.
 
