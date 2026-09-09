@@ -42,3 +42,34 @@ export async function upsertCompanyFacts(cik: string): Promise<{ cik: string; en
 
   return { cik: paddedCik, entityName: data.entityName };
 }
+
+export interface CompanyRecord {
+  cik: string;
+  entityName: string;
+}
+
+export async function getCompanyByCik(cik: string): Promise<CompanyRecord | null> {
+  const result = await pool.query('SELECT cik, entity_name FROM companies WHERE cik = $1', [padCik(cik)]);
+  if (result.rows.length === 0) return null;
+  return { cik: result.rows[0].cik, entityName: result.rows[0].entity_name };
+}
+
+export interface FactRecord {
+  tag: string;
+  unit: string;
+  value: string;
+  period_end: string;
+  fiscal_year: number | null;
+  fiscal_period: string | null;
+  form: string | null;
+  filed_date: string | null;
+}
+
+export async function getFactsByCik(cik: string): Promise<FactRecord[]> {
+  const result = await pool.query(
+    `SELECT tag, unit, value, period_end, fiscal_year, fiscal_period, form, filed_date
+     FROM filing_facts WHERE cik = $1 ORDER BY tag`,
+    [padCik(cik)],
+  );
+  return result.rows;
+}
