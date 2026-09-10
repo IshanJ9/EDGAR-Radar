@@ -40,11 +40,17 @@ export async function upsertFact(cik: string, tag: string, fact: UsGaapFact): Pr
     return;
   }
 
+  // Keyed on accn (not just period), so a genuine restatement - the same
+  // period reported again under a *different* filing - appends a new row
+  // instead of overwriting the prior one. Re-ingesting the exact same
+  // filing (same accn) still idempotently updates that one row rather than
+  // duplicating it. effective_from records when this value became the
+  // known-true figure (the filing's own filed date).
   await pool.query(
-    `INSERT INTO filing_facts (cik, tag, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date)
-     VALUES ($1, $2, 'USD', $3, $4, $5, $6, $7, $8, $9, $10)
-     ON CONFLICT (cik, tag, unit, period_end, COALESCE(period_start, '0001-01-01'))
-     DO UPDATE SET value = EXCLUDED.value, form = EXCLUDED.form, accn = EXCLUDED.accn, filed_date = EXCLUDED.filed_date, updated_at = now()`,
+    `INSERT INTO filing_facts (cik, tag, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date, effective_from)
+     VALUES ($1, $2, 'USD', $3, $4, $5, $6, $7, $8, $9, $10, $10)
+     ON CONFLICT (cik, tag, unit, period_end, COALESCE(period_start, '0001-01-01'), accn)
+     DO UPDATE SET value = EXCLUDED.value, form = EXCLUDED.form, filed_date = EXCLUDED.filed_date, updated_at = now()`,
     [cik, tag, fact.val, fact.start ?? null, fact.end, fact.fy, fact.fp, fact.form, fact.accn, fact.filed],
   );
 }
@@ -94,12 +100,22 @@ export interface FactRecord {
   form: string | null;
   accn: string;
   filed_date: string | null;
+  effective_from: string;
 }
 
+/**
+ * Returns the current (most recently effective) value for each distinct
+ * period - filing_facts can hold multiple rows per period now (one per
+ * restatement), so this picks the latest one per (tag, period) rather than
+ * returning every historical version to API consumers.
+ */
 export async function getFactsByCik(cik: string): Promise<FactRecord[]> {
   const result = await pool.query(
-    `SELECT tag, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date
-     FROM filing_facts WHERE cik = $1 ORDER BY tag, period_end`,
+    `SELECT DISTINCT ON (tag, unit, period_end, period_start)
+            tag, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date, effective_from
+     FROM filing_facts
+     WHERE cik = $1
+     ORDER BY tag, unit, period_end, period_start, effective_from DESC`,
     [padCik(cik)],
   );
   return result.rows;

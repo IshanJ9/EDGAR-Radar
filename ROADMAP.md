@@ -68,23 +68,23 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Goal:** idempotent, resumable ingestion at real scale (~200 companies), not one-at-a-time.
 
 **Build:**
-- [ ] Pick your ~200-company universe (e.g. S&P 500 constituents), store the list
-- [ ] Migrate the proper EAV `filing_facts` table (extend/replace Phase 1's storage)
-- [ ] Token-bucket rate limiter targeting 5–8 req/s
-- [ ] Resumable backfill script: iterate companies, fetch + upsert, checkpoint progress in an `ingestion_runs`/cursor table
-- [ ] Data-quality checks (numeric values, known units) that quarantine bad rows instead of crashing
-- [ ] Full-text ingestion: fetch a filing's primary HTML doc, extract plaintext with `cheerio`, store in `filing_text_sections` with a `tsvector` column
-- [ ] `effective_from` pattern on `filing_facts` so restatements append, never overwrite
+- [x] Pick your ~200-company universe (e.g. S&P 500 constituents), store the list
+- [x] Migrate the proper EAV `filing_facts` table (extend/replace Phase 1's storage)
+- [x] Token-bucket rate limiter targeting 5–8 req/s
+- [x] Resumable backfill script: iterate companies, fetch + upsert, checkpoint progress in an `ingestion_runs`/cursor table
+- [x] Data-quality checks (numeric values, known units) that quarantine bad rows instead of crashing
+- [x] Full-text ingestion: fetch a filing's primary HTML doc, extract plaintext with `cheerio`, store in `filing_text_sections` with a `tsvector` column
+- [x] `effective_from` pattern on `filing_facts` so restatements append, never overwrite
 
 **Tech:** same stack + `cheerio`
 
 **Do NOT use yet:** Kafka, Airflow, Spark (data fits comfortably in Postgres; this is one linear job, not a DAG)
 
 **Test these failure cases:**
-- [ ] Kill the backfill mid-run (`kill -9`) — confirm it resumes without duplicating rows
-- [ ] A company that changes SIC code/taxonomy version between filings
-- [ ] An HTML filing whose structure breaks the text extractor — must skip, not crash
-- [ ] Deliberately trigger a rate-limit breach — confirm you detect the 403 and back off
+- [x] Kill the backfill mid-run (`kill -9`) — confirm it resumes without duplicating rows
+- [x] A company that changes SIC code/taxonomy version between filings
+- [x] An HTML filing whose structure breaks the text extractor — must skip, not crash
+- [x] Deliberately trigger a rate-limit breach — confirm you detect the 403 and back off
 
 **Done when:** `npm run backfill` ingests 200+ companies end-to-end, is safely re-runnable, survives a kill/restart, and quarantines bad records via 3+ automated checks.
 
