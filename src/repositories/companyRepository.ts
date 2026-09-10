@@ -12,11 +12,11 @@ async function upsertCompany(cik: string, entityName: string): Promise<void> {
 
 async function upsertFact(cik: string, tag: string, fact: UsGaapFact): Promise<void> {
   await pool.query(
-    `INSERT INTO filing_facts (cik, tag, unit, value, period_end, fiscal_year, fiscal_period, form, filed_date)
-     VALUES ($1, $2, 'USD', $3, $4, $5, $6, $7, $8)
-     ON CONFLICT (cik, tag, unit, period_end, form)
-     DO UPDATE SET value = EXCLUDED.value, filed_date = EXCLUDED.filed_date, updated_at = now()`,
-    [cik, tag, fact.val, fact.end, fact.fy, fact.fp, fact.form, fact.filed],
+    `INSERT INTO filing_facts (cik, tag, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date)
+     VALUES ($1, $2, 'USD', $3, $4, $5, $6, $7, $8, $9, $10)
+     ON CONFLICT (cik, tag, unit, period_end, COALESCE(period_start, '0001-01-01'))
+     DO UPDATE SET value = EXCLUDED.value, form = EXCLUDED.form, accn = EXCLUDED.accn, filed_date = EXCLUDED.filed_date, updated_at = now()`,
+    [cik, tag, fact.val, fact.start ?? null, fact.end, fact.fy, fact.fp, fact.form, fact.accn, fact.filed],
   );
 }
 
@@ -58,17 +58,19 @@ export interface FactRecord {
   tag: string;
   unit: string;
   value: string;
+  period_start: string | null;
   period_end: string;
   fiscal_year: number | null;
   fiscal_period: string | null;
   form: string | null;
+  accn: string;
   filed_date: string | null;
 }
 
 export async function getFactsByCik(cik: string): Promise<FactRecord[]> {
   const result = await pool.query(
-    `SELECT tag, unit, value, period_end, fiscal_year, fiscal_period, form, filed_date
-     FROM filing_facts WHERE cik = $1 ORDER BY tag`,
+    `SELECT tag, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date
+     FROM filing_facts WHERE cik = $1 ORDER BY tag, period_end`,
     [padCik(cik)],
   );
   return result.rows;

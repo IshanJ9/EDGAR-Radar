@@ -1,16 +1,24 @@
+import { TokenBucket } from './rateLimiter';
+
 const CONTACT_EMAIL = process.env.EDGAR_CONTACT_EMAIL;
 if (!CONTACT_EMAIL) {
   throw new Error('Missing EDGAR_CONTACT_EMAIL in .env (see .env.example).');
 }
 const USER_AGENT = `EDGAR Radar (${CONTACT_EMAIL})`;
 
+// SEC's hard limit is 10 req/s; CLAUDE.md says stay at 5-8/s, so 7 targets
+// the middle of that range with a small burst allowance.
+const secRateLimiter = new TokenBucket(7, 7);
+
 export interface UsGaapFact {
+  start?: string;
   end: string;
   val: number;
   fy: number;
   fp: string;
   form: string;
   filed: string;
+  accn: string;
 }
 
 export class CompanyFactsNotFoundError extends Error {}
@@ -23,6 +31,7 @@ export async function fetchCompanyFacts(cik: string): Promise<any> {
   const paddedCik = padCik(cik);
   const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${paddedCik}.json`;
 
+  await secRateLimiter.acquire();
   const response = await fetch(url, {
     headers: { 'User-Agent': USER_AGENT },
   });
