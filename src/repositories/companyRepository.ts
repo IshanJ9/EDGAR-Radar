@@ -1,5 +1,6 @@
 import { pool } from '../db';
 import { fetchCompanyFacts, mostRecentFact, padCik, REVENUE_TAGS, NET_INCOME_TAGS, UsGaapFact } from '../sec';
+import { validateFact } from '../dataQuality';
 
 async function upsertCompany(cik: string, entityName: string): Promise<void> {
   await pool.query(
@@ -10,7 +11,35 @@ async function upsertCompany(cik: string, entityName: string): Promise<void> {
   );
 }
 
-async function upsertFact(cik: string, tag: string, fact: UsGaapFact): Promise<void> {
+async function insertQuarantinedFact(cik: string, tag: string, unit: string, fact: UsGaapFact, reason: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO quarantined_facts (cik, tag, unit, raw_value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date, reason)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [
+      cik,
+      tag,
+      unit,
+      String(fact.val),
+      fact.start ?? null,
+      fact.end,
+      String(fact.fy),
+      fact.fp,
+      fact.form,
+      fact.accn,
+      fact.filed,
+      reason,
+    ],
+  );
+}
+
+export async function upsertFact(cik: string, tag: string, fact: UsGaapFact): Promise<void> {
+  const unit = 'USD';
+  const validation = validateFact(unit, fact);
+  if (!validation.valid) {
+    await insertQuarantinedFact(cik, tag, unit, fact, validation.reason!);
+    return;
+  }
+
   await pool.query(
     `INSERT INTO filing_facts (cik, tag, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date)
      VALUES ($1, $2, 'USD', $3, $4, $5, $6, $7, $8, $9, $10)

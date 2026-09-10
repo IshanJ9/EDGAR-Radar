@@ -27,14 +27,17 @@ export function padCik(cik: string): string {
   return cik.padStart(10, '0');
 }
 
+/** Rate-limited fetch with SEC's required User-Agent header, shared by every SEC caller. */
+export async function secFetch(url: string): Promise<Response> {
+  await secRateLimiter.acquire();
+  return fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+}
+
 export async function fetchCompanyFacts(cik: string): Promise<any> {
   const paddedCik = padCik(cik);
   const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${paddedCik}.json`;
 
-  await secRateLimiter.acquire();
-  const response = await fetch(url, {
-    headers: { 'User-Agent': USER_AGENT },
-  });
+  const response = await secFetch(url);
 
   if (!response.ok) {
     if (response.status === 404) {
@@ -46,6 +49,48 @@ export async function fetchCompanyFacts(cik: string): Promise<any> {
   }
 
   return response.json();
+}
+
+export interface SecSubmissions {
+  filings: {
+    recent: {
+      accessionNumber: string[];
+      filingDate: string[];
+      form: string[];
+      primaryDocument: string[];
+    };
+  };
+}
+
+export async function fetchSubmissions(cik: string): Promise<SecSubmissions> {
+  const paddedCik = padCik(cik);
+  const url = `https://data.sec.gov/submissions/CIK${paddedCik}.json`;
+
+  const response = await secFetch(url);
+  if (!response.ok) {
+    throw new Error(`Request to ${url} failed with status ${response.status}.`);
+  }
+  return response.json();
+}
+
+export interface FilingReference {
+  accessionNumber: string;
+  filingDate: string;
+  form: string;
+  primaryDocument: string;
+}
+
+/** SEC's submissions API lists recent filings newest-first; this returns the first match. */
+export function findMostRecentFiling(submissions: SecSubmissions, formTypes: string[]): FilingReference | null {
+  const { recent } = submissions.filings;
+  const idx = recent.form.findIndex((form) => formTypes.includes(form));
+  if (idx === -1) return null;
+  return {
+    accessionNumber: recent.accessionNumber[idx]!,
+    filingDate: recent.filingDate[idx]!,
+    form: recent.form[idx]!,
+    primaryDocument: recent.primaryDocument[idx]!,
+  };
 }
 
 export function mostRecentFact(
