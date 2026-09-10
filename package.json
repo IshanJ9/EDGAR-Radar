@@ -7,6 +7,7 @@
     "start": "ts-node index.ts",
     "dev": "ts-node src/server.ts",
     "migrate": "node-pg-migrate",
+    "backfill": "ts-node scripts/backfill.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
