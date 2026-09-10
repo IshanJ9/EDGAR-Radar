@@ -4,8 +4,8 @@ Update this file after every completed step. Read it first, every session,
 before doing anything else.
 
 ## Current status
-**Phase:** 1 — Backend — DONE (all "Done when" criteria met)
-**Next step:** Phase 2, step 1 — Pick your ~200-company universe (e.g. S&P 500 constituents), store the list (do not start until confirmed)
+**Phase:** 2 — Data Engineering
+**Next step:** Phase 2, step 2 — Migrate the proper EAV `filing_facts` table (extend/replace Phase 1's storage)
 
 ## Log
 - [x] Phase 0, step 1 — Project scaffolded: `npm init`, TypeScript, `ts-node`, `@types/node`, `tsconfig.json` generated. (Re-verified/redone 2026-09-09 — the scaffold files were missing from disk despite being checked off, so `npm init`, dev-dep install, and `tsc --init` were re-run before continuing.)
@@ -41,6 +41,11 @@ Built the real Express + Postgres API described in ROADMAP.md, on top of Phase 0
 - **Validation & security:** every body-accepting endpoint validated with `zod`; all queries parameterized (verified against real SQL-injection payloads); passwords never stored or returned in plaintext; duplicate-safe upserts and unique constraints throughout (companies, users, watchlist entries).
 - **Verified against real data and the real server** throughout, not just type-checked — including the full register → login → watchlist 3 companies → fetch facts flow, and all 4 of ROADMAP's Phase 1 failure cases (duplicate email, expired/tampered JWT, SQL injection, duplicate watchlist entry).
 - **Along the way**, fixed several real tooling issues rather than working around them: TypeScript 7 vs. `ts-node` incompatibility, `pg`'s dual ESM/CJS exports under `nodenext`, a project-wide `verbatimModuleSyntax` misconfiguration, `ts-node`'s default file-inclusion behavior missing ambient `.d.ts` files, and a stale background dev-server process silently serving old code during step 6 testing.
+
+## Phase 2
+
+- [x] Phase 2, step 1 — Picked a ~200-company universe: since SEC doesn't publish an official S&P 500 constituent list (that's S&P's IP), the user chose a hardcoded static list rather than scraping a third-party source. Curated ~200 well-known large-cap US tickers by hand (spread across sectors), then wrote [scripts/buildCompanyUniverse.ts](scripts/buildCompanyUniverse.ts) to cross-reference each ticker against SEC's own authoritative `company_tickers.json` bulk file — resolving real CIKs from SEC rather than ever guessing/hallucinating a CIK number by hand. Output: [data/company-universe.json](data/company-universe.json), 196 companies (`cik`, `ticker`, `name`).
+  - The cross-reference caught 5 real discrepancies the curated list couldn't have known about up front: `MMC`/`BK` are listed under alternate tickers (`MRSH`/`BNY`) in SEC's file for the same CIK — kept, just under SEC's ticker (confirmed with the user); `HES` (Hess, acquired by Chevron) and `EA` (Electronic Arts' take-private buyout) no longer appear as independent SEC filers — dropped; `AVB` (AvalonBay) also didn't resolve for an unclear reason — dropped rather than guessed at, per the user's choice not to investigate further. Also caught and fixed a duplicate-CIK case (`GOOG`/`GOOGL` are the same Alphabet filer under two share classes) — dropped `GOOG`, and added an automatic duplicate-CIK check to the script so future re-runs catch this class of issue without a manual review.
 - [ ] Phase 0, step 5 — Parse + print most recent Revenues / NetIncomeLoss, with tag fallback
 - [ ] Phase 0, step 6 — Handle bad-CIK and no-XBRL-data cases without crashing
 - [ ] Phase 0, step 7 — Verified against 5 real companies including a failure case
