@@ -1,7 +1,8 @@
 import { readFileSync } from 'fs';
 import path from 'path';
 import { fetchSubmissions } from './sec';
-import { upsertCompanyFacts } from './repositories/companyRepository';
+import { attemptCompanyIngestion } from './companyIngestion';
+import { isQuarantined } from './repositories/failingCompanyRepository';
 import { ingestMostRecentFilingText } from './repositories/filingTextRepository';
 import { getLastCheckedAt, setLastCheckedAt, startPollerRun, completePollerRun, failPollerRun } from './repositories/pollerRepository';
 
@@ -35,6 +36,11 @@ export async function runPollCycle(): Promise<{ companiesChecked: number; newFil
   try {
     for (const company of universe) {
       companiesChecked += 1;
+
+      if (await isQuarantined(company.cik)) {
+        continue;
+      }
+
       let submissions;
       try {
         submissions = await fetchSubmissions(company.cik);
@@ -54,10 +60,9 @@ export async function runPollCycle(): Promise<{ companiesChecked: number; newFil
       newFilingsFound += newIndexes.length;
       console.log(`  New filing(s) for ${company.ticker} (${company.cik}): ${newIndexes.map((i) => recent.form[i]).join(', ')}`);
 
-      try {
-        await upsertCompanyFacts(company.cik);
-      } catch (err) {
-        console.error(`  Poller: failed to refresh facts for ${company.cik}: ${err instanceof Error ? err.message : err}`);
+      const outcome = await attemptCompanyIngestion(company.cik);
+      if (outcome.status === 'failed') {
+        console.error(`  Poller: failed to refresh facts for ${company.cik}: ${outcome.error}${outcome.newlyQuarantined ? ' (now quarantined)' : ''}`);
       }
 
       const hasNew10K = newIndexes.some((i) => recent.form[i] === '10-K');

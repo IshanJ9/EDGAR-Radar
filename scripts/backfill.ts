@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { readFileSync } from 'fs';
 import path from 'path';
 import { pool } from '../src/db';
-import { upsertCompanyFacts } from '../src/repositories/companyRepository';
+import { attemptCompanyIngestion } from '../src/companyIngestion';
 import { startOrResumeRun, markCompanySuccess, markCompanyFailed, completeRun, getRunSummary } from '../src/repositories/ingestionRepository';
 
 interface UniverseEntry {
@@ -28,13 +28,15 @@ async function main() {
 
   let done = 0;
   for (const cik of pendingCiks) {
-    try {
-      await upsertCompanyFacts(cik);
+    const outcome = await attemptCompanyIngestion(cik);
+    if (outcome.status === 'success') {
       await markCompanySuccess(run.id, cik);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await markCompanyFailed(run.id, cik, message);
-      console.error(`  Failed CIK ${cik}: ${message}`);
+    } else if (outcome.status === 'skipped-quarantined') {
+      await markCompanyFailed(run.id, cik, 'Skipped: quarantined after repeated failures (see failing_companies)');
+      console.error(`  Skipped CIK ${cik}: quarantined after repeated failures.`);
+    } else {
+      await markCompanyFailed(run.id, cik, outcome.error);
+      console.error(`  Failed CIK ${cik}: ${outcome.error}${outcome.newlyQuarantined ? ' (now quarantined)' : ''}`);
     }
 
     done += 1;
