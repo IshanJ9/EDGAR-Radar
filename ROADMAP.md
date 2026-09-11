@@ -118,23 +118,23 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Goal:** decouple ingestion, parsing, scoring, and notification into independently scalable stages.
 
 **Build:**
-- [ ] Stand up Redis; install BullMQ
-- [ ] Ingestion Poller enqueues `filing.discovered`
-- [ ] Parser Worker consumes it, does Phase 2's parse work, enqueues `filing.parsed`
-- [ ] Scoring Worker consumes `filing.parsed` (can stub the actual scoring until Phase 5), enqueues `scores.updated`
-- [ ] Notification Worker consumes `scores.updated`, checks watchlists, sends (or logs) an alert
-- [ ] Every consumer is idempotent — upsert keyed on (accession number, stage)
-- [ ] Bull Board wired up for queue visibility
+- [x] Stand up Redis; install BullMQ
+- [x] Ingestion Poller enqueues `filing.discovered`
+- [x] Parser Worker consumes it, does Phase 2's parse work, enqueues `filing.parsed`
+- [x] Scoring Worker consumes `filing.parsed` (can stub the actual scoring until Phase 5), enqueues `scores.updated`
+- [x] Notification Worker consumes `scores.updated`, checks watchlists, sends (or logs) an alert
+- [x] Every consumer is idempotent — upsert keyed on (accession number, stage)
+- [x] Bull Board wired up for queue visibility
 
 **Tech:** Redis + BullMQ
 
 **Do NOT use yet:** Kafka (four consumer *stages*, not many independent consumer *groups* replaying history), Kubernetes (a handful of containers doesn't need an orchestrator)
 
 **Test these failure cases:**
-- [ ] Kill each worker type mid-job, one at a time — job returns to queue, no data loss
-- [ ] A job processed twice (at-least-once delivery) — confirm no duplicate rows/emails
-- [ ] Restart Redis — confirm in-flight jobs aren't silently lost
-- [ ] Stop the notification worker for an hour — confirm earlier stages keep working and the backlog drains after
+- [x] Kill each worker type mid-job, one at a time — job returns to queue, no data loss
+- [x] A job processed twice (at-least-once delivery) — confirm no duplicate rows/emails
+- [x] Restart Redis — confirm in-flight jobs aren't silently lost
+- [x] Stop the notification worker for an hour — confirm earlier stages keep working and the backlog drains after
 
 **Done when:** you can kill any one worker at any time with zero data loss and no duplicate side effects, and can watch a filing move through all four stages via Bull Board.
 
