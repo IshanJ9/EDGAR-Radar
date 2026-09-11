@@ -7,6 +7,19 @@ before doing anything else.
 **Phase:** 3 — Automation — DONE (with two honestly-documented, user-accepted gaps — see below)
 **Next step:** Phase 4, step 1 — Stand up Redis; install BullMQ (do not start until confirmed)
 
+## Post-Phase-3: real-world 48h unattended validation (in progress, on separate infra)
+The user is running the "runs unattended 48+ hours" bar for real, on an Azure student VM (`Standard_B2ats_v2`, 892MiB RAM), isolated from local dev — deployed from a `phase-3-complete` git tag with its own Postgres/`.env`, so it doesn't interfere with continued Phase 4+ work here.
+
+**A real bug surfaced immediately on deploy, not caught by local testing:** running `poll`, `heartbeat`, and `reconcile` together crashed the VM outright (SSH became fully unresponsive, required an Azure-level restart) — traced to `reconciliation.ts`'s `extractCompanyFactsForCiks()` buffering and `JSON.parse`-ing **all 196 companies' full companyfacts JSON into one `Map` before processing any of them**. On a memory-constrained host this caused a genuine V8 OOM abort (`Aborted (core dumped)` mid-`JSON.parse`) — never surfaced locally since the dev machine has abundant RAM regardless of this inefficiency.
+
+**Fixed properly, not worked around:** [src/bulkData.ts](src/bulkData.ts)'s `extractCompanyFactsForCiks()` replaced with `forEachCompanyFacts()` — a callback-based streaming API that processes one company at a time (extract → compare/upsert via the callback → let GC reclaim it → next), instead of holding all 196 parsed JSON blobs simultaneously. [src/reconciliation.ts](src/reconciliation.ts) updated accordingly. This is a general improvement (peak memory now scales with the largest single company, not the whole universe), not a VM-specific hack.
+
+Verified the fix locally (real ~1.4GB download, not simulated) with memory tracking: **peak RSS was 480.6MB for the entire run** (was crashing a host with 892MB+2GB swap before) — 196/196 companies checked, 0 discrepancies (consistent, since the earlier Tesla-deletion test had already re-synced everything). Tagged as `phase-3-complete-v2`; the VM pulled it and `reconcile` completed successfully on retry (196/196, 0 discrepancies, no crash).
+
+Also had to add 2GB swap to the VM and use `disown -a` (not `tmux`, to avoid another concurrent-startup memory spike) to detach the three long-running processes from the SSH session — verified they survive a full disconnect/reconnect (process table showed `?` for controlling tty afterward, confirming true detachment, PIDs unchanged).
+
+**48h clock started ~2026-09-11 10:01 UTC.** `poll` (every 30 min), `heartbeat` (every 15 min), `reconcile` (nightly, 2 AM) all confirmed running and detached. Will check `poller_runs`/`reconciliation_runs`/`alert_state` on the VM's Postgres after ~48h for the actual pass/fail on zero-duplicates/zero-gaps/survives-unattended. This runs independently of local Phase 4+ work.
+
 ## Log
 - [x] Phase 0, step 1 — Project scaffolded: `npm init`, TypeScript, `ts-node`, `@types/node`, `tsconfig.json` generated. (Re-verified/redone 2026-09-09 — the scaffold files were missing from disk despite being checked off, so `npm init`, dev-dep install, and `tsc --init` were re-run before continuing.)
 - [x] Phase 0, step 2 — git initialized, `.gitignore` added (`node_modules/`, `dist/`, `build/`, logs, `.env`/`.env.*` except `.env.example`), first commit made (later squashed to `55d6cf3` to drop a commit trailer the user didn't want).
