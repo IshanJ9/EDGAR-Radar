@@ -1,5 +1,5 @@
 import { pool } from '../db';
-import { padCik, fetchSubmissions, findMostRecentFiling } from '../sec';
+import { padCik, fetchSubmissions, findMostRecentFiling, FilingReference } from '../sec';
 import { fetchFilingDocumentHtml, extractPlainText } from '../filingText';
 
 export class NoFilingFoundError extends Error {}
@@ -22,21 +22,16 @@ async function upsertFilingTextSection(
 }
 
 /**
- * Fetches a company's most recent filing of one of `formTypes` (e.g. 10-K),
- * extracts its plaintext, and stores it. Returns metadata about what was
- * ingested, not the (potentially very large) content itself.
+ * Fetches a specific, already-known filing's document, extracts its
+ * plaintext, and stores it. Used when the caller (e.g. the Parser Worker,
+ * acting on a `filing.discovered` job) already knows exactly which filing
+ * to ingest, so it doesn't need to re-fetch the submissions list to find it.
  */
-export async function ingestMostRecentFilingText(
+export async function ingestFilingText(
   cik: string,
-  formTypes: string[] = ['10-K'],
+  filing: FilingReference,
 ): Promise<{ cik: string; accn: string; form: string; filingDate: string; contentLength: number }> {
   const paddedCik = padCik(cik);
-  const submissions = await fetchSubmissions(paddedCik);
-  const filing = findMostRecentFiling(submissions, formTypes);
-  if (!filing) {
-    throw new NoFilingFoundError(`No filing of type [${formTypes.join(', ')}] found for CIK ${paddedCik}.`);
-  }
-
   const html = await fetchFilingDocumentHtml(paddedCik, filing);
   const content = extractPlainText(html);
 
@@ -49,6 +44,25 @@ export async function ingestMostRecentFilingText(
     filingDate: filing.filingDate,
     contentLength: content.length,
   };
+}
+
+/**
+ * Fetches a company's most recent filing of one of `formTypes` (e.g. 10-K)
+ * and ingests it via `ingestFilingText`. Used by the backfill script, which
+ * (unlike the Parser Worker) doesn't already have a specific filing in hand.
+ */
+export async function ingestMostRecentFilingText(
+  cik: string,
+  formTypes: string[] = ['10-K'],
+): Promise<{ cik: string; accn: string; form: string; filingDate: string; contentLength: number }> {
+  const paddedCik = padCik(cik);
+  const submissions = await fetchSubmissions(paddedCik);
+  const filing = findMostRecentFiling(submissions, formTypes);
+  if (!filing) {
+    throw new NoFilingFoundError(`No filing of type [${formTypes.join(', ')}] found for CIK ${paddedCik}.`);
+  }
+
+  return ingestFilingText(paddedCik, filing);
 }
 
 export interface FilingTextSearchResult {

@@ -9,6 +9,7 @@
     "migrate": "node-pg-migrate",
     "backfill": "ts-node scripts/backfill.ts",
     "poll": "ts-node scripts/poller.ts",
+    "worker:parser": "ts-node scripts/parserWorker.ts",
     "reconcile": "ts-node scripts/reconciliation.ts",
     "heartbeat": "ts-node scripts/heartbeat.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
