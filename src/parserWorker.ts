@@ -1,12 +1,15 @@
 import { Job } from 'bullmq';
 import { attemptCompanyIngestion } from './companyIngestion';
 import { ingestFilingText } from './repositories/filingTextRepository';
+import { claimStage } from './repositories/stageCompletionRepository';
 import { filingParsedQueue, FilingDiscoveredJobData } from './queues';
 
 // Matches the poller's pre-Phase-4 behavior: only 10-Ks are worth the
 // cost of a full-text fetch + extraction for now (real Item-level
 // segmentation is Phase 5's job).
 const TEXT_INGEST_FORMS = ['10-K'];
+
+const STAGE = 'parsed';
 
 /**
  * Consumes one `filing.discovered` job: refreshes the company's XBRL facts
@@ -23,6 +26,12 @@ const TEXT_INGEST_FORMS = ['10-K'];
  * the underlying SEC call already exhausted its own retries. An unexpected
  * error (e.g. a lost DB connection) still propagates so BullMQ can retry
  * the job or eventually dead-letter it.
+ *
+ * The fact/text upserts above are already naturally idempotent (safe to
+ * redo on a redelivered job), but enqueuing `filing.parsed` is not - so
+ * that specific step is guarded by `claimStage`, keyed on this filing's
+ * accession number and the 'parsed' stage, so a redelivered job can't
+ * produce a duplicate downstream job.
  */
 export async function processFilingDiscovered(job: Job<FilingDiscoveredJobData>): Promise<void> {
   const { cik, ticker, accessionNumber, form, filingDate, primaryDocument } = job.data;
@@ -45,6 +54,12 @@ export async function processFilingDiscovered(job: Job<FilingDiscoveredJobData>)
         `  Parser worker: failed to ingest filing text for ${ticker} (${cik}) accn ${accessionNumber}: ${err instanceof Error ? err.message : err}`,
       );
     }
+  }
+
+  const firstTimeAtThisStage = await claimStage(accessionNumber, STAGE);
+  if (!firstTimeAtThisStage) {
+    console.log(`  Parser worker: accn ${accessionNumber} already reached the '${STAGE}' stage - skipping duplicate filing.parsed enqueue.`);
+    return;
   }
 
   await filingParsedQueue.add('filing-parsed', {

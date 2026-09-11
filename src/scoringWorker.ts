@@ -1,5 +1,8 @@
 import { Job } from 'bullmq';
+import { claimStage } from './repositories/stageCompletionRepository';
 import { scoresUpdatedQueue, FilingParsedJobData } from './queues';
+
+const STAGE = 'scored';
 
 /**
  * Placeholder for Phase 5's real scoring math (Beneish M-Score, Altman
@@ -15,13 +18,23 @@ function computeScores(_cik: string): null {
 
 /**
  * Consumes one `filing.parsed` job and enqueues `scores.updated` for the
- * (not yet built) Notification Worker. No scoring happens here yet - see
- * `computeScores`.
+ * Notification Worker. No scoring happens here yet - see `computeScores`.
+ *
+ * Enqueuing `scores.updated` is the only side effect here, and it's not
+ * idempotent on its own, so it's guarded by `claimStage` (keyed on this
+ * filing's accession number and the 'scored' stage) to prevent a
+ * redelivered job from producing a duplicate downstream job.
  */
 export async function processFilingParsed(job: Job<FilingParsedJobData>): Promise<void> {
   const { cik, ticker, accessionNumber, form, filingDate, primaryDocument, factsRefreshed, textIngested } = job.data;
 
   const scores = computeScores(cik);
+
+  const firstTimeAtThisStage = await claimStage(accessionNumber, STAGE);
+  if (!firstTimeAtThisStage) {
+    console.log(`  Scoring worker: accn ${accessionNumber} already reached the '${STAGE}' stage - skipping duplicate scores.updated enqueue.`);
+    return;
+  }
 
   await scoresUpdatedQueue.add('scores-updated', {
     cik,
