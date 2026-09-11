@@ -94,23 +94,23 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Goal:** the pipeline stays correct unattended, without a human running commands.
 
 **Build:**
-- [ ] Interval poller (`node-cron`) detecting new filings since the last successful run
-- [ ] Nightly reconciliation job against bulk `companyfacts.zip`
-- [ ] Retry with exponential backoff on transient errors
-- [ ] Max-retry + quarantine path for permanently failing filings
-- [ ] Heartbeat/silence alerting (email or Slack webhook) if no successful run in N minutes
+- [x] Interval poller (`node-cron`) detecting new filings since the last successful run
+- [x] Nightly reconciliation job against bulk `companyfacts.zip`
+- [x] Retry with exponential backoff on transient errors
+- [x] Max-retry + quarantine path for permanently failing filings
+- [x] Heartbeat/silence alerting (email or Slack webhook) if no successful run in N minutes
 
 **Tech:** `node-cron`, `ingestion_runs` as source of truth for "last processed," `nodemailer` or a Slack webhook
 
 **Do NOT use yet:** a dedicated message queue (still one poller doing sequential work), Airflow (two scheduled jobs isn't a DAG)
 
 **Test these failure cases:**
-- [ ] Kill the poller process — does it restart, or stay silently dead?
-- [ ] Simulate an SEC outage for an hour — does it catch up cleanly after?
-- [ ] A permanently malformed filing retried forever — confirm the dead-letter path catches it
-- [ ] Deliberately skip one filing — confirm nightly reconciliation finds and backfills it
+- [x] Kill the poller process — does it restart, or stay silently dead? **Tested; stays silently dead** — no process supervisor exists in this phase's tech stack (Docker/Kubernetes are explicitly Phase 6). Accepted as a known limitation for now; see PROGRESS.md.
+- [x] Simulate an SEC outage for an hour — does it catch up cleanly after?
+- [x] A permanently malformed filing retried forever — confirm the dead-letter path catches it
+- [x] Deliberately skip one filing — confirm nightly reconciliation finds and backfills it
 
-**Done when:** runs unattended 48+ hours, zero duplicates, zero permanent gaps, survives one injected failure, sends exactly one alert when you break something on purpose.
+**Done when:** runs unattended 48+ hours (not verified within this session — see PROGRESS.md), zero duplicates, zero permanent gaps, survives one injected failure, sends exactly one alert when you break something on purpose.
 
 ---
 

@@ -2,11 +2,11 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import { fetchSubmissions } from './sec';
 import { attemptCompanyIngestion } from './companyIngestion';
-import { isQuarantined } from './repositories/failingCompanyRepository';
+import { isQuarantined, recordFailure } from './repositories/failingCompanyRepository';
 import { ingestMostRecentFilingText } from './repositories/filingTextRepository';
 import { getLastCheckedAt, setLastCheckedAt, startPollerRun, completePollerRun, failPollerRun } from './repositories/pollerRepository';
 
-interface UniverseEntry {
+export interface UniverseEntry {
   cik: string;
   ticker: string;
   name: string;
@@ -23,15 +23,21 @@ function loadUniverse(): UniverseEntry[] {
  * XBRL facts re-upserted (cheap, idempotent, and companyfacts aggregates
  * all of a company's data regardless of which specific filing changed it);
  * a new 10-K specifically also triggers a full-text re-ingest.
+ *
+ * `universeOverride` lets tests exercise this against a small fixed set of
+ * companies instead of the real ~196, so failure-simulation tests aren't
+ * dominated by real per-company retry/backoff time; production callers
+ * omit it and get the real universe.
  */
-export async function runPollCycle(): Promise<{ companiesChecked: number; newFilingsFound: number }> {
-  const universe = loadUniverse();
+export async function runPollCycle(universeOverride?: UniverseEntry[]): Promise<{ companiesChecked: number; newFilingsFound: number }> {
+  const universe = universeOverride ?? loadUniverse();
   const since = await getLastCheckedAt();
   const cycleStartedAt = new Date();
 
   const runId = await startPollerRun();
   let companiesChecked = 0;
   let newFilingsFound = 0;
+  let submissionCheckFailures = 0;
 
   try {
     for (const company of universe) {
@@ -45,7 +51,17 @@ export async function runPollCycle(): Promise<{ companiesChecked: number; newFil
       try {
         submissions = await fetchSubmissions(company.cik);
       } catch (err) {
-        console.error(`  Poller: failed to check ${company.cik} (${company.ticker}): ${err instanceof Error ? err.message : err}`);
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`  Poller: failed to check ${company.cik} (${company.ticker}): ${message}`);
+        submissionCheckFailures += 1;
+        // Track this like any other ingestion failure so a company that is
+        // *specifically* and persistently broken (not a general SEC outage)
+        // eventually gets quarantined - once quarantined it's skipped before
+        // reaching this fetch, so it stops blocking the cursor for everyone
+        // else. A genuine outage instead fails many/all companies at once,
+        // none of which individually reach the quarantine threshold from a
+        // single bad cycle.
+        await recordFailure(company.cik, message);
         continue;
       }
 
@@ -75,7 +91,19 @@ export async function runPollCycle(): Promise<{ companiesChecked: number; newFil
       }
     }
 
-    await setLastCheckedAt(cycleStartedAt);
+    // Only advance the cursor if every company was actually checked. If any
+    // submissions fetch failed (e.g. a partial or full SEC outage), we don't
+    // actually know whether that company filed something during this
+    // window - advancing the cursor anyway would silently and permanently
+    // skip it. Keeping the old cursor means the same window gets re-checked
+    // for everyone next cycle, which is redundant but never loses data.
+    if (submissionCheckFailures === 0) {
+      await setLastCheckedAt(cycleStartedAt);
+    } else {
+      console.warn(
+        `  Poller: ${submissionCheckFailures} company/companies could not be checked this cycle - cursor NOT advanced, same window will be re-checked next cycle.`,
+      );
+    }
     await completePollerRun(runId, companiesChecked, newFilingsFound);
     return { companiesChecked, newFilingsFound };
   } catch (err) {

@@ -10,6 +10,7 @@
     "backfill": "ts-node scripts/backfill.ts",
     "poll": "ts-node scripts/poller.ts",
     "reconcile": "ts-node scripts/reconciliation.ts",
+    "heartbeat": "ts-node scripts/heartbeat.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
