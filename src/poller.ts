@@ -1,10 +1,9 @@
 import { readFileSync } from 'fs';
 import path from 'path';
 import { fetchSubmissions } from './sec';
-import { attemptCompanyIngestion } from './companyIngestion';
 import { isQuarantined, recordFailure } from './repositories/failingCompanyRepository';
-import { ingestMostRecentFilingText } from './repositories/filingTextRepository';
 import { getLastCheckedAt, setLastCheckedAt, startPollerRun, completePollerRun, failPollerRun } from './repositories/pollerRepository';
+import { filingDiscoveredQueue } from './queues';
 
 export interface UniverseEntry {
   cik: string;
@@ -19,10 +18,11 @@ function loadUniverse(): UniverseEntry[] {
 
 /**
  * Checks every company in the universe for filings newer than the last
- * successful poll's cursor. Any company with a new filing gets its
- * XBRL facts re-upserted (cheap, idempotent, and companyfacts aggregates
- * all of a company's data regardless of which specific filing changed it);
- * a new 10-K specifically also triggers a full-text re-ingest.
+ * successful poll's cursor. Any filing newer than the cursor gets enqueued
+ * as a `filing.discovered` job (one per filing) rather than processed
+ * inline - as of Phase 4 that actual ingestion work (Phase 2's fact
+ * upsert + full-text re-ingest) moves to a separate Parser Worker
+ * consuming this queue, decoupling detection from processing.
  *
  * `universeOverride` lets tests exercise this against a small fixed set of
  * companies instead of the real ~196, so failure-simulation tests aren't
@@ -76,18 +76,15 @@ export async function runPollCycle(universeOverride?: UniverseEntry[]): Promise<
       newFilingsFound += newIndexes.length;
       console.log(`  New filing(s) for ${company.ticker} (${company.cik}): ${newIndexes.map((i) => recent.form[i]).join(', ')}`);
 
-      const outcome = await attemptCompanyIngestion(company.cik);
-      if (outcome.status === 'failed') {
-        console.error(`  Poller: failed to refresh facts for ${company.cik}: ${outcome.error}${outcome.newlyQuarantined ? ' (now quarantined)' : ''}`);
-      }
-
-      const hasNew10K = newIndexes.some((i) => recent.form[i] === '10-K');
-      if (hasNew10K) {
-        try {
-          await ingestMostRecentFilingText(company.cik, ['10-K']);
-        } catch (err) {
-          console.error(`  Poller: failed to refresh filing text for ${company.cik}: ${err instanceof Error ? err.message : err}`);
-        }
+      for (const idx of newIndexes) {
+        await filingDiscoveredQueue.add('filing-discovered', {
+          cik: company.cik,
+          ticker: company.ticker,
+          accessionNumber: recent.accessionNumber[idx]!,
+          form: recent.form[idx]!,
+          filingDate: recent.filingDate[idx]!,
+          primaryDocument: recent.primaryDocument[idx]!,
+        });
       }
     }
 
