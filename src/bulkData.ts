@@ -22,15 +22,28 @@ export async function downloadBulkCompanyFacts(destPath: string): Promise<void> 
  * using unzipper's random-access mode (reads the central directory, then
  * seeks directly to each requested entry) - never extracts or reads the
  * other ~10,000+ companies not in our universe.
+ *
+ * Processes one company at a time via `onCompany`, awaiting it before
+ * moving to the next entry, rather than parsing and holding every
+ * requested company's full companyfacts JSON in memory simultaneously.
+ * Some companies' JSON is several MB once parsed into objects - buffering
+ * all ~196 at once (the original design) was enough to crash a
+ * memory-constrained host (confirmed: 892MB RAM + swap, real OOM abort
+ * during JSON.parse). Processing incrementally keeps peak memory to
+ * roughly one company's worth, regardless of how large the universe grows.
  */
-export async function extractCompanyFactsForCiks(zipPath: string, ciks: string[]): Promise<Map<string, any>> {
+export async function forEachCompanyFacts(
+  zipPath: string,
+  ciks: string[],
+  onCompany: (cik: string, companyFacts: any) => Promise<void>,
+): Promise<{ found: number; missing: string[] }> {
   if (!existsSync(zipPath)) {
     throw new Error(`Bulk companyfacts.zip not found at ${zipPath}`);
   }
 
   const directory = await unzipper.Open.file(zipPath);
   const wanted = new Set(ciks.map(padCik));
-  const results = new Map<string, any>();
+  const found = new Set<string>();
 
   for (const entry of directory.files) {
     const match = entry.path.match(/^CIK(\d{10})\.json$/);
@@ -39,8 +52,13 @@ export async function extractCompanyFactsForCiks(zipPath: string, ciks: string[]
     if (!wanted.has(cik)) continue;
 
     const buffer = await entry.buffer();
-    results.set(cik, JSON.parse(buffer.toString('utf-8')));
+    const companyFacts = JSON.parse(buffer.toString('utf-8'));
+    found.add(cik);
+    await onCompany(cik, companyFacts);
+    // Let the parsed object be garbage collected before the next entry -
+    // nothing here retains a reference to it once onCompany returns.
   }
 
-  return results;
+  const missing = ciks.map(padCik).filter((cik) => !found.has(cik));
+  return { found: found.size, missing };
 }

@@ -1,6 +1,6 @@
 import { readFileSync, unlinkSync, existsSync } from 'fs';
 import path from 'path';
-import { downloadBulkCompanyFacts, extractCompanyFactsForCiks } from './bulkData';
+import { downloadBulkCompanyFacts, forEachCompanyFacts } from './bulkData';
 import { mostRecentFact, REVENUE_TAGS, NET_INCOME_TAGS } from './sec';
 import { upsertFact, getFactsByCik } from './repositories/companyRepository';
 import { startReconciliationRun, completeReconciliationRun, failReconciliationRun } from './repositories/reconciliationRepository';
@@ -50,21 +50,14 @@ export async function runReconciliation(): Promise<{
 
     console.log('Downloading SEC bulk companyfacts.zip (~1.4GB)...');
     await downloadBulkCompanyFacts(ZIP_PATH);
-    console.log('Download complete. Extracting our universe\'s entries...');
+    console.log('Download complete. Processing our universe\'s entries one at a time...');
 
-    const bulkData = await extractCompanyFactsForCiks(ZIP_PATH, universe.map((c) => c.cik));
-    console.log(`Extracted ${bulkData.size}/${universe.length} companies from the bulk archive.`);
+    const tickerByCik = new Map(universe.map((c) => [c.cik.padStart(10, '0'), c.ticker]));
 
-    for (const company of universe) {
-      companiesChecked += 1;
-      const bulkFacts = bulkData.get(company.cik);
-      if (!bulkFacts) {
-        companiesMissingFromBulk += 1;
-        console.warn(`  ${company.ticker} (${company.cik}) not found in bulk archive.`);
-        continue;
-      }
+    const { found, missing } = await forEachCompanyFacts(ZIP_PATH, universe.map((c) => c.cik), async (cik, bulkFacts) => {
+      const ticker = tickerByCik.get(cik) ?? cik;
 
-      const currentFacts = await getFactsByCik(company.cik);
+      const currentFacts = await getFactsByCik(cik);
       const currentByKey = new Map(currentFacts.map((f) => [factKey(f.tag, f.period_start, f.period_end), f.value]));
 
       for (const [tags] of [[REVENUE_TAGS], [NET_INCOME_TAGS]] as const) {
@@ -77,11 +70,17 @@ export async function runReconciliation(): Promise<{
         if (currentValue === undefined || Number(currentValue) !== bulkFact.fact.val) {
           discrepanciesFound += 1;
           console.log(
-            `  Discrepancy for ${company.ticker} ${bulkFact.tag} [${bulkFact.fact.end}]: stored=${currentValue ?? '(missing)'}, bulk=${bulkFact.fact.val}. Reconciling...`,
+            `  Discrepancy for ${ticker} ${bulkFact.tag} [${bulkFact.fact.end}]: stored=${currentValue ?? '(missing)'}, bulk=${bulkFact.fact.val}. Reconciling...`,
           );
-          await upsertFact(company.cik, bulkFact.tag, bulkFact.fact);
+          await upsertFact(cik, bulkFact.tag, bulkFact.fact);
         }
       }
+    });
+
+    companiesMissingFromBulk = missing.length;
+    companiesChecked = found + missing.length;
+    for (const cik of missing) {
+      console.warn(`  ${tickerByCik.get(cik) ?? cik} (${cik}) not found in bulk archive.`);
     }
 
     await completeReconciliationRun(runId, companiesChecked, companiesMissingFromBulk, discrepanciesFound);
