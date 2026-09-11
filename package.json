@@ -8,6 +8,7 @@
     "dev": "ts-node src/server.ts",
     "migrate": "node-pg-migrate",
     "backfill": "ts-node scripts/backfill.ts",
+    "poll": "ts-node scripts/poller.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -19,6 +20,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.5.0",
+    "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.23.1",
     "node-pg-migrate": "^9.0.0",
     "ts-node": "^10.9.2",
@@ -30,6 +32,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "node-cron": "^4.6.0",
     "pg": "^8.23.0",
     "zod": "^4.5.4"
   }
