@@ -33,6 +33,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@bull-board/api": "^9.10.0",
+    "@bull-board/express": "^9.10.0",
     "bcrypt": "^6.0.0",
     "bullmq": "^6.3.4",
     "cheerio": "^1.2.0",
