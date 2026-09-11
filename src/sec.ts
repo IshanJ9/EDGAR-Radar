@@ -1,4 +1,5 @@
 import { TokenBucket } from './rateLimiter';
+import { fetchWithRetry } from './retry';
 
 const CONTACT_EMAIL = process.env.EDGAR_CONTACT_EMAIL;
 if (!CONTACT_EMAIL) {
@@ -27,10 +28,17 @@ export function padCik(cik: string): string {
   return cik.padStart(10, '0');
 }
 
-/** Rate-limited fetch with SEC's required User-Agent header, shared by every SEC caller. */
+/**
+ * Rate-limited, retrying fetch with SEC's required User-Agent header, shared
+ * by every SEC caller (companyfacts, submissions, filing documents, the bulk
+ * archive). Each retry attempt re-acquires a rate-limiter token, since a
+ * retry is a genuine new request against SEC.
+ */
 export async function secFetch(url: string): Promise<Response> {
-  await secRateLimiter.acquire();
-  return fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  return fetchWithRetry(async () => {
+    await secRateLimiter.acquire();
+    return fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+  });
 }
 
 export async function fetchCompanyFacts(cik: string): Promise<any> {
