@@ -33,6 +33,7 @@
     "@types/pg": "^8.23.1",
     "@types/unzipper": "^0.10.11",
     "jest": "^30.5.1",
+    "nock": "^14.0.17",
     "node-pg-migrate": "^9.0.0",
     "ts-jest": "^29.4.12",
     "ts-node": "^10.9.2",

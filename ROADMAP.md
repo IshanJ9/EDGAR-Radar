@@ -172,7 +172,7 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 - [x] `docker-compose.yml` wiring API + workers + Postgres + Redis
 - [x] Unit tests for parsers/scorers with fixture data
 - [x] Integration tests against a throwaway test Postgres
-- [ ] Contract tests for the SEC client using `nock` — **remove any test that hits real SEC**
+- [x] Contract tests for the SEC client using `nock` — **remove any test that hits real SEC**
 - [ ] Structured logging (`pino`)
 - [ ] GitHub Actions: lint + test + build on every PR
 - [ ] AWS setup: RDS, EC2/Fargate, S3, SES, Secrets Manager
