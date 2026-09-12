@@ -69,9 +69,15 @@ export async function ingestMostRecentFilingText(
  * Fetches and ingests a company's `count` most recent filings of one of
  * `formTypes` - used for risk-factor-section diffing (Phase 5), which needs
  * a company's two most recent 10-Ks, not just the latest one the poller
- * already keeps fresh. Skips any filing already stored (same idempotent
- * `filing_text_sections` upsert, but no need to re-fetch/re-extract HTML
- * for a filing this function has already ingested before).
+ * already keeps fresh. Always re-fetches and re-extracts each filing (the
+ * underlying `filing_text_sections` upsert is idempotent, so this is safe
+ * to call repeatedly) - it does not skip filings already stored. Found
+ * during Phase 5's closing failure-case testing that an earlier version of
+ * this comment incorrectly claimed it did skip them; corrected here rather
+ * than left misleading. A practical effect of always re-fetching: any
+ * previously-corrupted or stale stored text for these two filings
+ * self-heals on the next call, since it gets overwritten with a fresh copy
+ * from SEC before being read back.
  */
 export async function ingestRecentFilingsText(
   cik: string,

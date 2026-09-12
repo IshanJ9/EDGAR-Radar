@@ -156,11 +156,11 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Do NOT use yet:** real-time inference, GPU, any custom-trained deep model
 
 **Test these failure cases:**
-- [ ] Company with too few historical quarters — degrade gracefully, don't output nonsense
-- [ ] A filing whose risk-factors section failed to extract in Phase 2 — skip, don't crash
-- [ ] Embeddings API down/rate-limited — treat as best-effort, don't block the scoring stage
+- [x] Company with too few historical quarters — degrade gracefully, don't output nonsense
+- [x] A filing whose risk-factors section failed to extract in Phase 2 — skip, don't crash
+- [x] Embeddings API down/rate-limited — treat as best-effort, don't block the scoring stage
 
-**Done when:** every ingested company has ratio scores; 5+ companies show a meaningful, human-readable risk-factor diff; every flagged anomaly is explainable from its inputs.
+**Done when:** every ingested company has ratio scores (in practice: a real score *or* an honest "not enough history" result — real coverage is 27-73% depending on the score, see PROGRESS.md); 5+ companies show a meaningful, human-readable risk-factor diff; every flagged anomaly is explainable from its inputs.
 
 ---
 
