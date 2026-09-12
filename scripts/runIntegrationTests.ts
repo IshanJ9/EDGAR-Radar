@@ -107,7 +107,10 @@ async function main(): Promise<void> {
   // after `finally` runs, not the process) and let Node exit on its own
   // with a false "success" code once the event loop empties - the opposite
   // of what a CI step checking this command's exit code needs.
-  let exitCode = 1;
+  // No initializer: both branches below assign it exhaustively before the
+  // one read at the bottom, so an initial placeholder value was always dead
+  // - confirmed by ESLint's no-useless-assignment, not just reasoned about.
+  let exitCode: number;
   try {
     console.log('Running migrations against the throwaway database...');
     const migrateExit = await runMigrationsWithRetry();

@@ -1,3 +1,9 @@
+// From 'pg' itself (a real, direct dependency), not 'pg-protocol' - pg
+// re-exports DatabaseError both at the type level and at runtime
+// (pg/lib/index.js attaches it to its own export object), so importing
+// from 'pg-protocol' directly would rely on an undeclared transitive
+// dependency instead.
+import { DatabaseError } from 'pg';
 import { pool } from '../db';
 
 export class DuplicateEmailError extends Error {}
@@ -15,8 +21,8 @@ export async function createUser(email: string, passwordHash: string): Promise<U
       [email, passwordHash],
     );
     return result.rows[0];
-  } catch (err: any) {
-    if (err.code === '23505') {
+  } catch (err) {
+    if (err instanceof DatabaseError && err.code === '23505') {
       throw new DuplicateEmailError(`Email ${email} is already registered.`);
     }
     throw err;

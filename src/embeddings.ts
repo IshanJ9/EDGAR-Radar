@@ -40,8 +40,10 @@
  *   config reports `max_position_embeddings`/`model_max_length` of 512.
  *   Callers must still chunk, just against a 512-token ceiling.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- @xenova/transformers's pipeline() return type is dynamically resolved (it's behind a runtime `await import()`, not a static import) and task-keyed; not worth threading its real generic through this module's one lazy-singleton boundary.
 let embedderPromise: Promise<any> | null = null;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- same reason as embedderPromise above.
 async function getEmbedder(): Promise<any> {
   if (!embedderPromise) {
     embedderPromise = (async () => {

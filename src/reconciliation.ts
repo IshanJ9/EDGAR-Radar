@@ -38,8 +38,14 @@ export async function runReconciliation(): Promise<{
   const universe = loadUniverse();
   const runId = await startReconciliationRun();
 
-  let companiesChecked = 0;
-  let companiesMissingFromBulk = 0;
+  // companiesChecked/companiesMissingFromBulk deliberately have no
+  // initializer: both are unconditionally overwritten right after
+  // forEachCompanyFacts resolves (below), so an initial 0 was always dead -
+  // confirmed by ESLint's no-useless-assignment, not just reasoned about.
+  // discrepanciesFound genuinely needs its 0, since the loop below
+  // increments it incrementally rather than assigning it once at the end.
+  let companiesChecked: number;
+  let companiesMissingFromBulk: number;
   let discrepanciesFound = 0;
 
   try {

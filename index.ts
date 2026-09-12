@@ -8,6 +8,7 @@ async function main() {
     process.exit(1);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors fetchCompanyFacts's own Promise<any> return (see sec.ts): SEC's raw XBRL JSON is genuinely untyped here, not lazily typed.
   let data: any;
   try {
     data = await fetchCompanyFacts(cik);

@@ -42,6 +42,7 @@ export async function secFetch(url: string): Promise<Response> {
   });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- SEC's raw companyfacts JSON is genuinely untyped here (deeply nested, shape varies per company/tag); every caller reads it through mostRecentFact/annualFacts, which validate what they need at runtime instead.
 export async function fetchCompanyFacts(cik: string): Promise<any> {
   const paddedCik = padCik(cik);
   const url = `https://data.sec.gov/api/xbrl/companyfacts/CIK${paddedCik}.json`;
@@ -125,6 +126,7 @@ export function findRecentFilings(submissions: SecSubmissions, formTypes: string
 }
 
 export function mostRecentFact(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same untyped raw companyfacts JSON as fetchCompanyFacts above.
   companyFacts: any,
   tags: string[],
 ): { tag: string; fact: UsGaapFact } | null {
@@ -213,6 +215,7 @@ export interface AnnualFactResult {
  * whatever is most recent as of today.
  */
 export function annualFacts(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same untyped raw companyfacts JSON as fetchCompanyFacts above.
   companyFacts: any,
   tags: string[],
   unit: 'USD' | 'shares',

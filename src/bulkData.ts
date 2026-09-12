@@ -13,7 +13,12 @@ export async function downloadBulkCompanyFacts(destPath: string): Promise<void> 
   }
 
   const { Readable } = await import('stream');
-  const nodeStream = Readable.fromWeb(response.body as any);
+  // Bridges the Fetch API's ReadableStream type to Node's `stream/web` one -
+  // structurally compatible at runtime, but nominally different types from
+  // different lib declarations, which is what actually needed the cast.
+  // Derived from fromWeb's own parameter type rather than a hardcoded
+  // import, so this can't drift out of sync with a future Node types update.
+  const nodeStream = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]);
   await pipeline(nodeStream, createWriteStream(destPath));
 }
 
@@ -35,6 +40,7 @@ export async function downloadBulkCompanyFacts(destPath: string): Promise<void> 
 export async function forEachCompanyFacts(
   zipPath: string,
   ciks: string[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same untyped SEC companyfacts JSON shape as fetchCompanyFacts/mostRecentFact/annualFacts in sec.ts.
   onCompany: (cik: string, companyFacts: any) => Promise<void>,
 ): Promise<{ found: number; missing: string[] }> {
   if (!existsSync(zipPath)) {

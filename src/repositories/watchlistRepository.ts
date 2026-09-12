@@ -1,3 +1,4 @@
+import { DatabaseError } from 'pg';
 import { pool } from '../db';
 import { padCik } from '../sec';
 import { upsertCompanyFacts, getCompanyByCik } from './companyRepository';
@@ -19,8 +20,8 @@ export async function addToWatchlist(userId: number, cik: string): Promise<Watch
 
   try {
     await pool.query('INSERT INTO watchlists (user_id, cik) VALUES ($1, $2)', [userId, paddedCik]);
-  } catch (err: any) {
-    if (err.code === '23505') {
+  } catch (err) {
+    if (err instanceof DatabaseError && err.code === '23505') {
       throw new DuplicateWatchlistEntryError(`CIK ${paddedCik} is already on this user's watchlist.`);
     }
     throw err;

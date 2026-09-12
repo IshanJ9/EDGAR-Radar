@@ -1,0 +1,70 @@
+name: CI
+
+# Phase 6, step 7. Triggered on every PR, matching ROADMAP.md's literal
+# wording ("lint + test + build on every PR") - not also on push to `main`,
+# since this project hasn't asked for that and it would be a scope decision
+# beyond what this step names. Four independent, parallel jobs rather than
+# one combined job: GitHub's branch protection can require each one by name
+# individually, so "a failing-test PR can't merge" (this phase's own "Done
+# when" bar) can point at exactly which check failed, not just "CI failed."
+#
+# None of these four jobs needs a single GitHub secret. lint/build are pure
+# static analysis/compilation; `npm test` is fully hermetic (jest.setup.ts
+# supplies a placeholder EDGAR_CONTACT_EMAIL, and nock.disableNetConnect()
+# structurally blocks any real network call - see PROGRESS.md, Phase 6 step
+# 5); `npm run test:integration` starts and tears down its own throwaway
+# Postgres via Docker (scripts/runIntegrationTests.ts), which GitHub-hosted
+# ubuntu runners support out of the box. Needing zero secrets also means a
+# PR from a fork (which GitHub never hands repo secrets to) still runs the
+# full suite, not a degraded subset.
+on:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+
+  test-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run test:integration
