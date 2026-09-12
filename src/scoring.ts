@@ -23,10 +23,15 @@ export type ScoreOutcome<TInputs> =
   | { status: 'ok'; value: number; classification: string; inputs: TInputs }
   | { status: 'insufficient-history'; reason: string };
 
-/** Fetches 2 fiscal years for every tag concept a formula needs, in one batch. */
-async function fetchTwoYears(cik: string, concepts: Record<string, string[]>): Promise<Record<string, AnnualValue[]>> {
+/**
+ * Fetches 2 fiscal years for every tag concept a formula needs, in one
+ * batch. `asOfFiscalYear` restricts to fiscal years at or before it - used
+ * by Phase 5's back-testing step to compute a score using a specific
+ * historical fiscal-year pair instead of whatever's most recent today.
+ */
+async function fetchTwoYears(cik: string, concepts: Record<string, string[]>, asOfFiscalYear?: number): Promise<Record<string, AnnualValue[]>> {
   const entries = await Promise.all(
-    Object.entries(concepts).map(async ([key, tags]) => [key, await getAnnualValues(cik, tags, 2)] as const),
+    Object.entries(concepts).map(async ([key, tags]) => [key, await getAnnualValues(cik, tags, 2, asOfFiscalYear)] as const),
   );
   return Object.fromEntries(entries);
 }
@@ -63,16 +68,20 @@ export interface AltmanZInputs {
   liabilitiesDerived: boolean;
 }
 
-export async function computeAltmanZDoublePrime(cik: string): Promise<ScoreOutcome<AltmanZInputs>> {
-  const values = await fetchTwoYears(cik, {
-    assets: ASSETS_TAGS,
-    liabilities: LIABILITIES_TAGS,
-    currentAssets: CURRENT_ASSETS_TAGS,
-    currentLiabilities: CURRENT_LIABILITIES_TAGS,
-    retainedEarnings: RETAINED_EARNINGS_TAGS,
-    ebit: OPERATING_INCOME_TAGS,
-    equity: STOCKHOLDERS_EQUITY_TAGS,
-  });
+export async function computeAltmanZDoublePrime(cik: string, asOfFiscalYear?: number): Promise<ScoreOutcome<AltmanZInputs>> {
+  const values = await fetchTwoYears(
+    cik,
+    {
+      assets: ASSETS_TAGS,
+      liabilities: LIABILITIES_TAGS,
+      currentAssets: CURRENT_ASSETS_TAGS,
+      currentLiabilities: CURRENT_LIABILITIES_TAGS,
+      retainedEarnings: RETAINED_EARNINGS_TAGS,
+      ebit: OPERATING_INCOME_TAGS,
+      equity: STOCKHOLDERS_EQUITY_TAGS,
+    },
+    asOfFiscalYear,
+  );
 
   // Not every company tags a single combined "Liabilities" total in XBRL -
   // confirmed for real against AbbVie, which reports Assets and
@@ -155,18 +164,22 @@ export interface PiotroskiInputs {
   };
 }
 
-export async function computePiotroskiFScore(cik: string): Promise<ScoreOutcome<PiotroskiInputs>> {
-  const values = await fetchTwoYears(cik, {
-    assets: ASSETS_TAGS,
-    currentAssets: CURRENT_ASSETS_TAGS,
-    currentLiabilities: CURRENT_LIABILITIES_TAGS,
-    longTermDebt: LONG_TERM_DEBT_TAGS,
-    cfo: OPERATING_CASH_FLOW_TAGS,
-    netIncome: NET_INCOME_TAGS,
-    shares: SHARES_OUTSTANDING_TAGS,
-    grossProfit: GROSS_PROFIT_TAGS,
-    revenue: REVENUE_TAGS,
-  });
+export async function computePiotroskiFScore(cik: string, asOfFiscalYear?: number): Promise<ScoreOutcome<PiotroskiInputs>> {
+  const values = await fetchTwoYears(
+    cik,
+    {
+      assets: ASSETS_TAGS,
+      currentAssets: CURRENT_ASSETS_TAGS,
+      currentLiabilities: CURRENT_LIABILITIES_TAGS,
+      longTermDebt: LONG_TERM_DEBT_TAGS,
+      cfo: OPERATING_CASH_FLOW_TAGS,
+      netIncome: NET_INCOME_TAGS,
+      shares: SHARES_OUTSTANDING_TAGS,
+      grossProfit: GROSS_PROFIT_TAGS,
+      revenue: REVENUE_TAGS,
+    },
+    asOfFiscalYear,
+  );
 
   const missing = missingConcepts(values, 2);
   if (missing.length > 0) {
@@ -247,21 +260,25 @@ export interface BeneishInputs {
   };
 }
 
-export async function computeBeneishMScore(cik: string): Promise<ScoreOutcome<BeneishInputs>> {
-  const values = await fetchTwoYears(cik, {
-    assets: ASSETS_TAGS,
-    currentAssets: CURRENT_ASSETS_TAGS,
-    currentLiabilities: CURRENT_LIABILITIES_TAGS,
-    longTermDebt: LONG_TERM_DEBT_TAGS,
-    cfo: OPERATING_CASH_FLOW_TAGS,
-    netIncome: NET_INCOME_TAGS,
-    revenue: REVENUE_TAGS,
-    grossProfit: GROSS_PROFIT_TAGS,
-    receivables: RECEIVABLES_TAGS,
-    ppe: PPE_TAGS,
-    depreciation: DEPRECIATION_TAGS,
-    sga: SGA_TAGS,
-  });
+export async function computeBeneishMScore(cik: string, asOfFiscalYear?: number): Promise<ScoreOutcome<BeneishInputs>> {
+  const values = await fetchTwoYears(
+    cik,
+    {
+      assets: ASSETS_TAGS,
+      currentAssets: CURRENT_ASSETS_TAGS,
+      currentLiabilities: CURRENT_LIABILITIES_TAGS,
+      longTermDebt: LONG_TERM_DEBT_TAGS,
+      cfo: OPERATING_CASH_FLOW_TAGS,
+      netIncome: NET_INCOME_TAGS,
+      revenue: REVENUE_TAGS,
+      grossProfit: GROSS_PROFIT_TAGS,
+      receivables: RECEIVABLES_TAGS,
+      ppe: PPE_TAGS,
+      depreciation: DEPRECIATION_TAGS,
+      sga: SGA_TAGS,
+    },
+    asOfFiscalYear,
+  );
 
   const missing = missingConcepts(values, 2);
   if (missing.length > 0) {

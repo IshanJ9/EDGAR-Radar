@@ -140,7 +140,18 @@ export function mostRecentFact(
   return best;
 }
 
-export const REVENUE_TAGS = ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax'];
+// SalesRevenueNet/SalesRevenueGoodsNet were the standard revenue tags
+// before the ASC 606 revenue-recognition standard (mandatory ~2018)
+// introduced RevenueFromContractWithCustomerExcludingAssessedTax - confirmed
+// for real against Under Armour and Kraft Heinz's actual pre-2018 filings
+// during Phase 5 step 6's back-testing, which specifically needs older
+// historical fiscal years these newer tags don't cover.
+export const REVENUE_TAGS = [
+  'Revenues',
+  'RevenueFromContractWithCustomerExcludingAssessedTax',
+  'SalesRevenueNet',
+  'SalesRevenueGoodsNet',
+];
 export const NET_INCOME_TAGS = ['NetIncomeLoss', 'ProfitLoss'];
 
 // Phase 5 ratio-score inputs. Each is a fallback list, same pattern as
@@ -157,12 +168,22 @@ export const RETAINED_EARNINGS_TAGS = ['RetainedEarningsAccumulatedDeficit'];
 export const OPERATING_INCOME_TAGS = ['OperatingIncomeLoss']; // used as the standard EBIT proxy
 export const STOCKHOLDERS_EQUITY_TAGS = ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'];
 export const OPERATING_CASH_FLOW_TAGS = ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'];
-export const LONG_TERM_DEBT_TAGS = ['LongTermDebtNoncurrent', 'LongTermDebt'];
+// Confirmed against Kraft Heinz's real data (Phase 5 step 6 back-testing):
+// a third real-world variant, used by heavily-leveraged companies that
+// combine long-term debt and capital lease obligations under one tag.
+export const LONG_TERM_DEBT_TAGS = ['LongTermDebtNoncurrent', 'LongTermDebt', 'LongTermDebtAndCapitalLeaseObligations'];
 export const SHARES_OUTSTANDING_TAGS = ['CommonStockSharesOutstanding']; // unit: shares, not USD
 export const GROSS_PROFIT_TAGS = ['GrossProfit'];
 export const RECEIVABLES_TAGS = ['AccountsReceivableNetCurrent'];
 export const PPE_TAGS = ['PropertyPlantAndEquipmentNet'];
-export const DEPRECIATION_TAGS = ['DepreciationDepletionAndAmortization', 'DepreciationAmortizationAndAccretionNet', 'Depreciation'];
+// DepreciationAndAmortization (no "Depletion") confirmed as a 4th real
+// variant against Under Armour's actual pre-2018 filings (Phase 5 step 6).
+export const DEPRECIATION_TAGS = [
+  'DepreciationDepletionAndAmortization',
+  'DepreciationAmortizationAndAccretionNet',
+  'Depreciation',
+  'DepreciationAndAmortization',
+];
 export const SGA_TAGS = ['SellingGeneralAndAdministrativeExpense'];
 
 export interface AnnualFactResult {
@@ -184,12 +205,19 @@ export interface AnnualFactResult {
  * thing - mixing e.g. `LongTermDebt` for one year with
  * `LongTermDebtNoncurrent` for another (a real pattern seen in Tesla's own
  * data) could silently produce an invalid comparison.
+ *
+ * `maxFiscalYear`, when given, restricts the pool to fiscal years at or
+ * before it before taking the most recent `count` - added for Phase 5's
+ * back-testing step, which needs a specific *historical* fiscal-year pair
+ * (e.g. the two years surrounding a known accounting irregularity), not
+ * whatever is most recent as of today.
  */
 export function annualFacts(
   companyFacts: any,
   tags: string[],
   unit: 'USD' | 'shares',
   count: number,
+  maxFiscalYear?: number,
 ): AnnualFactResult | null {
   for (const tag of tags) {
     const values: UsGaapFact[] | undefined = companyFacts?.facts?.['us-gaap']?.[tag]?.units?.[unit];
@@ -198,6 +226,7 @@ export function annualFacts(
     const annualByFiscalYear = new Map<number, UsGaapFact>();
     for (const fact of values) {
       if (fact.form !== '10-K' || fact.fp !== 'FY') continue;
+      if (maxFiscalYear !== undefined && fact.fy > maxFiscalYear) continue;
       const existing = annualByFiscalYear.get(fact.fy);
       // A later 10-K can restate a prior fiscal year's figure - prefer
       // whichever was filed most recently for that fiscal year.
