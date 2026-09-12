@@ -101,6 +101,25 @@ export function findMostRecentFiling(submissions: SecSubmissions, formTypes: str
   };
 }
 
+/**
+ * Like `findMostRecentFiling`, but returns up to `count` matches instead of
+ * just the first. SEC's submissions API already lists `recent` newest-first,
+ * so unlike the XBRL fiscal-year matching in `annualFacts`, no re-sorting or
+ * dedup is needed - each 10-K is already a distinct, chronologically-ordered
+ * filing. Used for risk-factor-section diffing, which needs a company's two
+ * most recent 10-Ks, not just the latest one.
+ */
+export function findRecentFilings(submissions: SecSubmissions, formTypes: string[], count: number): FilingReference[] {
+  const { recent } = submissions.filings;
+  const indexes = recent.form.map((form, idx) => (formTypes.includes(form) ? idx : -1)).filter((idx) => idx !== -1);
+  return indexes.slice(0, count).map((idx) => ({
+    accessionNumber: recent.accessionNumber[idx]!,
+    filingDate: recent.filingDate[idx]!,
+    form: recent.form[idx]!,
+    primaryDocument: recent.primaryDocument[idx]!,
+  }));
+}
+
 export function mostRecentFact(
   companyFacts: any,
   tags: string[],

@@ -1,5 +1,5 @@
 import { pool } from '../db';
-import { padCik, fetchSubmissions, findMostRecentFiling, FilingReference } from '../sec';
+import { padCik, fetchSubmissions, findMostRecentFiling, findRecentFilings, FilingReference } from '../sec';
 import { fetchFilingDocumentHtml, extractPlainText } from '../filingText';
 
 export class NoFilingFoundError extends Error {}
@@ -63,6 +63,33 @@ export async function ingestMostRecentFilingText(
   }
 
   return ingestFilingText(paddedCik, filing);
+}
+
+/**
+ * Fetches and ingests a company's `count` most recent filings of one of
+ * `formTypes` - used for risk-factor-section diffing (Phase 5), which needs
+ * a company's two most recent 10-Ks, not just the latest one the poller
+ * already keeps fresh. Skips any filing already stored (same idempotent
+ * `filing_text_sections` upsert, but no need to re-fetch/re-extract HTML
+ * for a filing this function has already ingested before).
+ */
+export async function ingestRecentFilingsText(
+  cik: string,
+  formTypes: string[] = ['10-K'],
+  count = 2,
+): Promise<Array<{ cik: string; accn: string; form: string; filingDate: string; contentLength: number }>> {
+  const paddedCik = padCik(cik);
+  const submissions = await fetchSubmissions(paddedCik);
+  const filings = findRecentFilings(submissions, formTypes, count);
+  if (filings.length === 0) {
+    throw new NoFilingFoundError(`No filing of type [${formTypes.join(', ')}] found for CIK ${paddedCik}.`);
+  }
+
+  const results = [];
+  for (const filing of filings) {
+    results.push(await ingestFilingText(paddedCik, filing));
+  }
+  return results;
 }
 
 export interface FilingTextSearchResult {
