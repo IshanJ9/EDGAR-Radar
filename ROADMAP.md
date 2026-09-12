@@ -148,7 +148,7 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 - [x] Wire these into the (previously stubbed) Scoring Worker
 - [x] "Not enough history yet" fallback for companies with too few quarters
 - [x] Pick an embeddings approach (start with a hosted API) and implement risk-factor-section diffing between a company's consecutive 10-Ks
-- [ ] Store and expose diff results via the API
+- [x] Store and expose diff results via the API
 - [ ] Back-test ratio scores against 2–3 publicly known historical accounting-irregularity cases; write up results honestly, including where they fail
 
 **Tech:** plain TypeScript for ratios; hosted embeddings API (or a Python microservice using `sentence-transformers`, as an explicit later stretch)

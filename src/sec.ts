@@ -23,6 +23,7 @@ export interface UsGaapFact {
 }
 
 export class CompanyFactsNotFoundError extends Error {}
+export class SubmissionsNotFoundError extends Error {}
 
 export function padCik(cik: string): string {
   return cik.padStart(10, '0');
@@ -76,6 +77,9 @@ export async function fetchSubmissions(cik: string): Promise<SecSubmissions> {
 
   const response = await secFetch(url);
   if (!response.ok) {
+    if (response.status === 404) {
+      throw new SubmissionsNotFoundError(`No SEC submissions found for CIK ${paddedCik}. The CIK is likely invalid.`);
+    }
     throw new Error(`Request to ${url} failed with status ${response.status}.`);
   }
   return response.json();

@@ -92,6 +92,24 @@ export async function ingestRecentFilingsText(
   return results;
 }
 
+export interface StoredFilingText {
+  accn: string;
+  filingDate: string;
+  content: string;
+}
+
+/** Reads back up to `count` most recently stored filings of a form type (newest first), full text included. */
+export async function getRecentFilingTexts(cik: string, formTypes: string[] = ['10-K'], count = 2): Promise<StoredFilingText[]> {
+  const result = await pool.query(
+    `SELECT accn, filing_date, content FROM filing_text_sections
+     WHERE cik = $1 AND form = ANY($2) AND section_name = 'full_document'
+     ORDER BY filing_date DESC
+     LIMIT $3`,
+    [padCik(cik), formTypes, count],
+  );
+  return result.rows.map((row) => ({ accn: row.accn, filingDate: row.filing_date, content: row.content }));
+}
+
 export interface FilingTextSearchResult {
   cik: string;
   accn: string;

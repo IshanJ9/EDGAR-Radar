@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { CompanyFactsNotFoundError } from '../sec';
 import { getCompanyByCik, getFactsByCik, upsertCompanyFacts } from '../repositories/companyRepository';
+import { getOrComputeRiskFactorDiff } from '../riskFactorDiffService';
 
 const router = Router();
 
@@ -55,6 +56,26 @@ router.get('/:cik/facts', async (req, res) => {
       res.status(404).json({ error: err.message });
       return;
     }
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.get('/:cik/risk-factor-diff', async (req, res) => {
+  const { cik } = req.params;
+  if (!isValidCik(cik)) {
+    res.status(400).json({ error: 'CIK must be 1-10 digits' });
+    return;
+  }
+
+  try {
+    const diff = await getOrComputeRiskFactorDiff(cik);
+    if (!diff) {
+      res.status(404).json({ error: 'Not enough 10-K history yet to compute a risk-factor diff for this company.' });
+      return;
+    }
+    res.json(diff);
+  } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
   }
