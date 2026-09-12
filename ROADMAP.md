@@ -146,7 +146,7 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Build:**
 - [x] Implement Beneish M-Score, Altman Z-Score, Piotroski F-Score as pure functions over `filing_facts` (no ML — this is math)
 - [x] Wire these into the (previously stubbed) Scoring Worker
-- [ ] "Not enough history yet" fallback for companies with too few quarters
+- [x] "Not enough history yet" fallback for companies with too few quarters
 - [ ] Pick an embeddings approach (start with a hosted API) and implement risk-factor-section diffing between a company's consecutive 10-Ks
 - [ ] Store and expose diff results via the API
 - [ ] Back-test ratio scores against 2–3 publicly known historical accounting-irregularity cases; write up results honestly, including where they fail
