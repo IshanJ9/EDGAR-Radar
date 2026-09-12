@@ -6,19 +6,53 @@ import { embedTexts, cosineSimilarity } from './embeddings';
 // substantive chunk, rather than embedding/diffing them as their own
 // meaningless unit.
 const MIN_CHUNK_CHARS = 150;
-// The embedding model truncates around 256 tokens (~1000-1200 characters
-// of English prose) - split anything longer at sentence boundaries so
-// nothing silently gets cut off mid-thought before being embedded.
+// Split anything longer at sentence boundaries so nothing silently gets cut
+// off mid-thought before being embedded. An earlier version of this comment
+// justified 900 by a 256-token model limit; that limit was wrong - the model
+// actually truncates at 512 tokens (measured, see src/embeddings.ts). At a
+// measured ~5.15 characters/token on real filing prose, 900 characters is
+// only ~175 tokens, so this sits roughly 2.9x under the real ceiling. The
+// value is kept at 900 anyway: it is safe under either limit, and it is
+// chosen for *semantic* granularity - a chunk should be about one risk
+// factor, not the largest block the model will physically accept. There is
+// headroom to raise it if larger units ever prove more useful.
 const MAX_CHUNK_CHARS = 900;
 
+// Known precision floor on both thresholds: the quantized embedding model
+// carries up to ~0.025 of similarity error versus fp32 weights (measured -
+// see src/embeddings.ts). The 0.92 threshold is comparatively safe, since
+// that error shrinks to ~0.001 on genuinely near-identical text, but a pair
+// whose true similarity sits within ~0.025 of 0.60 can land on either side
+// of the 'modified'/'new' line. Treat classifications near 0.60 as
+// low-confidence rather than authoritative.
 const UNCHANGED_THRESHOLD = 0.92;
 const MODIFIED_THRESHOLD = 0.6;
+
+// Pagination artifacts from PDF/HTML-to-text conversion (src/filingText.ts)
+// that would otherwise get merged *into* a real chunk's text rather than
+// removed, quietly polluting its embedding. Confirmed as a real, pervasive
+// problem, not theoretical: found via a manual accuracy spot-check (Phase 5
+// closing) that a genuinely word-for-word-identical Apple risk-factor
+// paragraph was scored only 0.78 similarity (classified 'modified' instead
+// of 'unchanged') purely because a page header ("Apple Inc. | 2024 Form
+// 10-K | 16") had attached to it - and standalone page-number lines alone
+// appear 56-469 times per document across every company checked, not just
+// Apple's specific header style.
+const PAGE_NUMBER_LINE = /^\d{1,4}$/;
+const PIPE_DELIMITED_HEADER_LINE = /^.{0,80}\|.{0,60}\|\s*\d{1,4}\s*$/;
+// A second, independently-confirmed recurring artifact found while checking
+// whether the page-number fix generalized beyond Apple: a running
+// "Table of Contents" page header, appearing as its own line up to 97 times
+// in a single document (Alphabet) - not present in every company's filing
+// (Apple/Microsoft's real text has none), but real and pervasive enough in
+// the ones that do have it to be worth stripping the same way.
+const TABLE_OF_CONTENTS_LINE = /^table of contents$/i;
 
 export function chunkRiskFactorText(text: string): string[] {
   const lines = text
     .split('\n')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+    .filter((s) => s.length > 0 && !PAGE_NUMBER_LINE.test(s) && !PIPE_DELIMITED_HEADER_LINE.test(s) && !TABLE_OF_CONTENTS_LINE.test(s));
 
   const merged: string[] = [];
   let buffer = '';

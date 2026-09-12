@@ -12,9 +12,33 @@
  * works from this project's CommonJS/ts-node setup without a build-wide
  * module-format change (confirmed working - see PROGRESS.md).
  *
- * Model: Xenova/all-MiniLM-L6-v2 - a small (~90MB), fast, widely-used
- * sentence-embedding model, 384 dimensions, truncates around 256 tokens
- * per input (why callers should chunk text before embedding it).
+ * Model: Xenova/all-MiniLM-L6-v2 - a small, fast, widely-used
+ * sentence-embedding model (BertModel, 6 layers, 384 dimensions).
+ *
+ * Two details here were wrong in an earlier version of this comment and were
+ * corrected only after being measured directly, so they are recorded with
+ * their evidence rather than restated from memory:
+ *
+ * - Size: this loads the *quantized* build (`model_quantized.onnx`, 22.9MB
+ *   on disk), not the ~90MB fp32 one - `@xenova/transformers` defaults to
+ *   quantized. That is not free: measured against the fp32 weights over real
+ *   risk-factor-style sentences, quantization moves pairwise cosine
+ *   similarity by up to 0.0245. The error is smallest where similarity is
+ *   high (0.0011 on a genuine paraphrase pair) and largest in the 0.34-0.70
+ *   mid-range - which is exactly where riskFactorDiff's 0.60 'modified'
+ *   threshold sits. This is the measured, numeric form of the
+ *   already-documented "weak pairings near the 0.60 threshold" limitation.
+ *   Pass `{ quantized: false }` to `pipeline()` to trade ~67MB and slower
+ *   inference for that precision back.
+ *
+ * - Truncation: 512 tokens, NOT 256. Verified by appending a distinctive
+ *   tail to prefixes of known token length and finding where it stops
+ *   changing the embedding: at a 512-token prefix the tail still moved
+ *   similarity (0.996725), at 522 it was ignored entirely (1.000000). The
+ *   256 figure comes from sentence-transformers' `sentence_bert_config.json`
+ *   `max_seq_length`, which transformers.js does not apply; the model's own
+ *   config reports `max_position_embeddings`/`model_max_length` of 512.
+ *   Callers must still chunk, just against a 512-token ceiling.
  */
 let embedderPromise: Promise<any> | null = null;
 
