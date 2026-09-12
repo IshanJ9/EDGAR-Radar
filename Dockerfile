@@ -51,6 +51,18 @@ RUN npm run build
 RUN node dist/scripts/warmModelCache.js
 
 
+# ---- migrator --------------------------------------------------------------
+# One-off stage for running `node-pg-migrate` as its own docker-compose
+# service, ahead of the API/workers starting. Deliberately extends `deps`
+# (full node_modules, devDependencies included) rather than `runtime`:
+# node-pg-migrate is a devDependency, and migrations are plain CommonJS files
+# that need no TypeScript compilation - `runtime`'s pruned tree is the wrong
+# base for this, `deps` is exactly right.
+FROM deps AS migrator
+COPY migrations ./migrations
+CMD ["npx", "node-pg-migrate", "up"]
+
+
 # ---- runtime ---------------------------------------------------------------
 FROM base AS runtime
 ENV NODE_ENV=production

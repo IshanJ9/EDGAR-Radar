@@ -1,0 +1,147 @@
+# Wires the API and the three Phase 4 BullMQ workers to Postgres and Redis.
+#
+# Scope note: this composes only the four services ROADMAP.md's step names
+# ("API + workers + Postgres + Redis") - the ingestion poller, the nightly
+# reconciliation job, and the heartbeat check (Phase 3 scripts, not Phase 4
+# queue workers) are deliberately NOT included here. They also cannot be yet:
+# poller.ts and reconciliation.ts resolve `data/company-universe.json` via
+# `path.join(__dirname, ...)`, which breaks once compiled (see PROGRESS.md,
+# Phase 6 step 1) - containerizing them needs that fixed first, not papered
+# over with a Dockerfile-level path hack.
+#
+# No top-level `version:` key - obsolete in current Compose (v5.3.1 here).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      # Compose-only credentials for this container, independent of the
+      # DATABASE_URL in .env used for host-based (non-Docker) `npm run dev`.
+      # That DATABASE_URL points at `localhost`, which is meaningless inside
+      # Compose's own network - services below construct their own
+      # DATABASE_URL from these same three values, so nothing can drift
+      # between what Postgres is configured with and what the app connects
+      # with. Defaults match .env.example verbatim, so a clean checkout with
+      # only `.env.example` copied boots correctly with zero edits.
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-edgar_radar}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-edgar_radar}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      # Exposed to the host so `psql`/a GUI client can inspect the data
+      # directly during development - not required by any composed service.
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    # BullMQ explicitly requires Redis to run with no key-eviction policy -
+    # under memory pressure an eviction policy can silently drop queued job
+    # data, which is a correctness issue for exactly the kind of at-least-
+    # once delivery guarantees Phase 4 was built (and failure-case tested) to
+    # provide. `noeviction` makes Redis return an error instead of dropping
+    # data if it ever runs out of memory, which is the correct failure mode
+    # for a queue backend.
+    command: ["redis-server", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: migrator
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # One-shot job, not a long-running service - never auto-restart it.
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: runtime
+    # `runtime`'s default CMD (dist/src/server.js) - the API needs no
+    # override, unlike the three workers below.
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      PORT: ${PORT:-3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
+      REDIS_URL: redis://redis:6379
+      EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker-parser:
+    build:
+      context: .
+      target: runtime
+    command: ["node", "dist/scripts/parserWorker.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
+      REDIS_URL: redis://redis:6379
+      EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker-scoring:
+    build:
+      context: .
+      target: runtime
+    command: ["node", "dist/scripts/scoringWorker.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
+      REDIS_URL: redis://redis:6379
+      EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker-notification:
+    build:
+      context: .
+      target: runtime
+    command: ["node", "dist/scripts/notificationWorker.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
+      REDIS_URL: redis://redis:6379
+      EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
+      # Optional: without a real Slack webhook, notificationWorker.ts's
+      # existing behavior is to log the alert instead of sending it - not a
+      # Docker-specific fallback, the same as running it on the host.
+      ALERT_SLACK_WEBHOOK_URL: ${ALERT_SLACK_WEBHOOK_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
