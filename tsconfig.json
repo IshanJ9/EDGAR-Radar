@@ -40,6 +40,13 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
+
+    /* Emit compiled JS to dist/ for the Docker runtime image (Phase 6).
+       Everything still runs from TypeScript via ts-node in local dev; this
+       only defines where `npm run build` puts its output. Note the emitted
+       layout mirrors the repo (dist/src/..., dist/scripts/...), since tsc
+       infers the common root from the included files. */
+    "outDir": "dist",
   },
   "ts-node": {
     "files": true

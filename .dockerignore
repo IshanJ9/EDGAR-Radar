@@ -1,0 +1,33 @@
+# Build context hygiene. Two separate jobs here:
+#
+# 1. Keep secrets out of the image entirely. .env is excluded with no
+#    negation, so no local secret can ever be baked into a layer - a
+#    committed-secret is unrecoverable from image history the same way it is
+#    from git history (see CLAUDE.md).
+# 2. Keep the context small and the build correct. node_modules must never
+#    be copied in: it is a Windows-built tree here (win32-x64 native
+#    binaries), and the image installs its own Linux tree via `npm ci`.
+
+node_modules
+dist
+build
+.cache
+
+.env
+.env.*
+
+.git
+.gitignore
+.github
+
+*.log
+logs
+
+# Project docs and planning files - not needed at runtime.
+*.md
+docs
+
+# Local tooling / editor state.
+.claude
+.vscode
+.idea

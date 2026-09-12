@@ -6,6 +6,8 @@
   "scripts": {
     "start": "ts-node index.ts",
     "dev": "ts-node src/server.ts",
+    "build": "tsc",
+    "warm-model-cache": "ts-node scripts/warmModelCache.ts",
     "migrate": "node-pg-migrate",
     "backfill": "ts-node scripts/backfill.ts",
     "poll": "ts-node scripts/poller.ts",

@@ -168,7 +168,7 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Goal:** reproducible, tested, deployed — not just working on your machine.
 
 **Build:**
-- [ ] Dockerfiles for the API and each worker
+- [x] Dockerfiles for the API and each worker — one multi-stage `Dockerfile`, four `CMD`s (see PROGRESS.md for why one image rather than four files)
 - [ ] `docker-compose.yml` wiring API + workers + Postgres + Redis
 - [ ] Unit tests for parsers/scorers with fixture data
 - [ ] Integration tests against a throwaway test Postgres
