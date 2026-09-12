@@ -16,7 +16,8 @@
     "worker:notification": "ts-node scripts/notificationWorker.ts",
     "reconcile": "ts-node scripts/reconciliation.ts",
     "heartbeat": "ts-node scripts/heartbeat.ts",
-    "test": "jest"
+    "test": "jest",
+    "test:integration": "ts-node scripts/runIntegrationTests.ts"
   },
   "keywords": [],
   "author": "",

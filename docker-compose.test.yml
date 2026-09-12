@@ -1,0 +1,35 @@
+# A genuinely throwaway Postgres for Phase 6 step 4's integration tests -
+# deliberately separate from docker-compose.yml's dev/prod-shaped `postgres`
+# service, not a profile on it. tmpfs-backed rather than a named volume, so
+# nothing survives past this container's lifetime even if teardown is
+# somehow skipped - "throwaway" is enforced, not just a naming convention.
+#
+# Orchestrated exclusively by scripts/runIntegrationTests.ts (via
+# `npm run test:integration`), which starts this on a distinct port (55432)
+# and compose project name, runs migrations against it, runs the integration
+# suite, and always tears it down afterward. Not meant to be started by hand
+# via a bare `docker compose -f docker-compose.test.yml up`.
+#
+# Port 55432, not the more obvious 5433: confirmed for real that 5433 was
+# already bound by an unrelated project's own container on this host
+# (`razorpay_buildathon-postgres-1`) - "5433" is apparently a common
+# alternate-Postgres-port convention, which is exactly what makes it prone
+# to collide with whatever else a developer has running locally. Picked a
+# less common port instead of touching that unrelated container.
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: edgar_radar_test
+    ports:
+      - "55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d edgar_radar_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 20

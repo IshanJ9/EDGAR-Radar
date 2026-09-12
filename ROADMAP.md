@@ -171,7 +171,7 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 - [x] Dockerfiles for the API and each worker — one multi-stage `Dockerfile`, four `CMD`s (see PROGRESS.md for why one image rather than four files)
 - [x] `docker-compose.yml` wiring API + workers + Postgres + Redis
 - [x] Unit tests for parsers/scorers with fixture data
-- [ ] Integration tests against a throwaway test Postgres
+- [x] Integration tests against a throwaway test Postgres
 - [ ] Contract tests for the SEC client using `nock` — **remove any test that hits real SEC**
 - [ ] Structured logging (`pino`)
 - [ ] GitHub Actions: lint + test + build on every PR
