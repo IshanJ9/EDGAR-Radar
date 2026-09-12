@@ -9,10 +9,10 @@
     // See also https://aka.ms/tsconfig/module
     "module": "nodenext",
     "target": "esnext",
-    "types": ["node"],
+    "types": ["node", "jest"],
     // For nodejs:
     // "lib": ["esnext"],
-    // "types": ["node"],
+    // "types": ["node", "jest"],
     // and npm install -D @types/node
 
     // Other Outputs
@@ -50,5 +50,10 @@
   },
   "ts-node": {
     "files": true
-  }
+  },
+  // Test files are compiled independently by ts-jest (jest.config.js), which
+  // reads this file's compilerOptions directly - they do not need to go
+  // through `tsc`/`npm run build`. Excluded here so they never end up
+  // compiled into dist/ and shipped inside the production Docker image.
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

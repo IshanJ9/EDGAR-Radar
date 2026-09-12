@@ -16,7 +16,7 @@
     "worker:notification": "ts-node scripts/notificationWorker.ts",
     "reconcile": "ts-node scripts/reconciliation.ts",
     "heartbeat": "ts-node scripts/heartbeat.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
@@ -25,12 +25,15 @@
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.5.0",
     "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.23.1",
     "@types/unzipper": "^0.10.11",
+    "jest": "^30.5.1",
     "node-pg-migrate": "^9.0.0",
+    "ts-jest": "^29.4.12",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
