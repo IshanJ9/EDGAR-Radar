@@ -173,7 +173,7 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 - [x] Unit tests for parsers/scorers with fixture data
 - [x] Integration tests against a throwaway test Postgres
 - [x] Contract tests for the SEC client using `nock` — **remove any test that hits real SEC**
-- [ ] Structured logging (`pino`)
+- [x] Structured logging (`pino`)
 - [ ] GitHub Actions: lint + test + build on every PR
 - [ ] AWS setup: RDS, EC2/Fargate, S3, SES, Secrets Manager
 - [ ] Deploy-on-merge-to-main added to the GitHub Actions workflow

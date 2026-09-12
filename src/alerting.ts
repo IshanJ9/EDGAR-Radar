@@ -1,4 +1,11 @@
 import { pool } from './db';
+import { createLogger } from './logger';
+
+// Tagged 'alerting' (the module), not a specific service name - this file
+// is shared by both the composed notification worker (sendSlackAlert) and
+// the non-composed scripts/heartbeat.ts (checkPollerHeartbeat), so hardcoding
+// either caller's name here would misattribute the other's log lines.
+const logger = createLogger('alerting');
 
 /**
  * Posts a message to the configured Slack incoming webhook. If none is
@@ -9,7 +16,7 @@ import { pool } from './db';
 export async function sendSlackAlert(text: string): Promise<void> {
   const webhookUrl = process.env.ALERT_SLACK_WEBHOOK_URL;
   if (!webhookUrl) {
-    console.warn(`[ALERT - no Slack webhook configured, would have sent]: ${text}`);
+    logger.warn({ text }, 'No Slack webhook configured - would have sent this alert');
     return;
   }
 
@@ -20,7 +27,7 @@ export async function sendSlackAlert(text: string): Promise<void> {
   });
 
   if (!response.ok) {
-    console.error(`Failed to send Slack alert: ${response.status} ${await response.text()}`);
+    logger.error({ status: response.status, body: await response.text() }, 'Failed to send Slack alert');
   }
 }
 

@@ -47,7 +47,7 @@ router.post('/register', async (req, res) => {
       res.status(409).json({ error: err.message });
       return;
     }
-    console.error(err);
+    req.log.error({ err }, 'Failed to register user');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -73,7 +73,7 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET!, { expiresIn: '1h' });
     res.json({ token });
   } catch (err) {
-    console.error(err);
+    req.log.error({ err }, 'Failed to log in user');
     res.status(500).json({ error: 'Internal server error' });
   }
 });

@@ -3,6 +3,9 @@ import { attemptCompanyIngestion } from './companyIngestion';
 import { ingestFilingText } from './repositories/filingTextRepository';
 import { claimStage } from './repositories/stageCompletionRepository';
 import { filingParsedQueue, FilingDiscoveredJobData } from './queues';
+import { createLogger } from './logger';
+
+const logger = createLogger('parser-worker');
 
 // Matches the poller's pre-Phase-4 behavior: only 10-Ks are worth the
 // cost of a full-text fetch + extraction for now (real Item-level
@@ -39,9 +42,10 @@ export async function processFilingDiscovered(job: Job<FilingDiscoveredJobData>)
   const outcome = await attemptCompanyIngestion(cik);
   const factsRefreshed = outcome.status === 'success';
   if (outcome.status === 'failed') {
-    console.error(
-      `  Parser worker: failed to refresh facts for ${ticker} (${cik}): ${outcome.error}${outcome.newlyQuarantined ? ' (now quarantined)' : ''}`,
-    );
+    // outcome.error is a plain string (see companyIngestion.ts's Outcome
+    // type), not an Error instance - kept under `reason`, not `err`, so it
+    // isn't misread as something pino's Error serializer should apply to.
+    logger.error({ ticker, cik, reason: outcome.error, newlyQuarantined: outcome.newlyQuarantined }, 'Failed to refresh company facts');
   }
 
   let textIngested = false;
@@ -50,15 +54,13 @@ export async function processFilingDiscovered(job: Job<FilingDiscoveredJobData>)
       await ingestFilingText(cik, { accessionNumber, form, filingDate, primaryDocument });
       textIngested = true;
     } catch (err) {
-      console.error(
-        `  Parser worker: failed to ingest filing text for ${ticker} (${cik}) accn ${accessionNumber}: ${err instanceof Error ? err.message : err}`,
-      );
+      logger.error({ ticker, cik, accessionNumber, err }, 'Failed to ingest filing text');
     }
   }
 
   const firstTimeAtThisStage = await claimStage(accessionNumber, STAGE);
   if (!firstTimeAtThisStage) {
-    console.log(`  Parser worker: accn ${accessionNumber} already reached the '${STAGE}' stage - skipping duplicate filing.parsed enqueue.`);
+    logger.info({ accessionNumber, stage: STAGE }, 'Already reached this stage - skipping duplicate enqueue');
     return;
   }
 

@@ -36,7 +36,7 @@ router.post('/', async (req, res) => {
       res.status(404).json({ error: err.message });
       return;
     }
-    console.error(err);
+    req.log.error({ err }, 'Failed to add to watchlist');
     res.status(500).json({ error: 'Internal server error' });
   }
 });

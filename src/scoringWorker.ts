@@ -2,7 +2,9 @@ import { Job } from 'bullmq';
 import { computeAltmanZDoublePrime, computePiotroskiFScore, computeBeneishMScore } from './scoring';
 import { claimStage } from './repositories/stageCompletionRepository';
 import { scoresUpdatedQueue, FilingParsedJobData, FilingScores } from './queues';
+import { createLogger } from './logger';
 
+const logger = createLogger('scoring-worker');
 const STAGE = 'scored';
 
 /**
@@ -41,14 +43,16 @@ export async function processFilingParsed(job: Job<FilingParsedJobData>): Promis
   const { cik, ticker, accessionNumber, form, filingDate, primaryDocument, factsRefreshed, textIngested } = job.data;
 
   const scores = await computeScores(cik);
-  const summary = Object.entries(scores)
-    .map(([name, outcome]) => `${name}=${outcome.status === 'ok' ? outcome.value : 'n/a'}`)
-    .join(', ');
-  console.log(`  Scoring worker: computed scores for ${ticker} (${cik}): ${summary}`);
+  // Structured fields (one per score, its actual numeric value or the
+  // string 'n/a'), not a single flattened summary string - a log
+  // aggregator can filter/query by an individual score's value this way,
+  // which a pre-joined string like "altmanZ=1.685, piotroskiF=6" cannot do.
+  const scoreValues = Object.fromEntries(Object.entries(scores).map(([name, outcome]) => [name, outcome.status === 'ok' ? outcome.value : 'n/a']));
+  logger.info({ ticker, cik, scores: scoreValues }, 'Computed scores');
 
   const firstTimeAtThisStage = await claimStage(accessionNumber, STAGE);
   if (!firstTimeAtThisStage) {
-    console.log(`  Scoring worker: accn ${accessionNumber} already reached the '${STAGE}' stage - skipping duplicate scores.updated enqueue.`);
+    logger.info({ accessionNumber, stage: STAGE }, 'Already reached this stage - skipping duplicate enqueue');
     return;
   }
 

@@ -35,7 +35,7 @@ router.get('/:cik', async (req, res) => {
       res.status(404).json({ error: err.message });
       return;
     }
-    console.error(err);
+    req.log.error({ err }, 'Failed to get company');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -56,7 +56,7 @@ router.get('/:cik/facts', async (req, res) => {
       res.status(404).json({ error: err.message });
       return;
     }
-    console.error(err);
+    req.log.error({ err }, 'Failed to get company facts');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -76,7 +76,7 @@ router.get('/:cik/risk-factor-diff', async (req, res) => {
     }
     res.json(diff);
   } catch (err) {
-    console.error(err);
+    req.log.error({ err }, 'Failed to get risk-factor diff');
     res.status(500).json({ error: 'Internal server error' });
   }
 });

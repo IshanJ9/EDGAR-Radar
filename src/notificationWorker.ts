@@ -4,7 +4,9 @@ import { claimStage } from './repositories/stageCompletionRepository';
 import { sendSlackAlert } from './alerting';
 import { ScoresUpdatedJobData, FilingScores } from './queues';
 import { ScoreOutcome } from './scoring';
+import { createLogger } from './logger';
 
+const logger = createLogger('notification-worker');
 const STAGE = 'notified';
 
 /**
@@ -54,7 +56,7 @@ export async function processScoresUpdated(job: Job<ScoresUpdatedJobData>): Prom
 
   const firstTimeAtThisStage = await claimStage(accessionNumber, STAGE);
   if (!firstTimeAtThisStage) {
-    console.log(`  Notification worker: accn ${accessionNumber} already reached the '${STAGE}' stage - skipping duplicate alert.`);
+    logger.info({ accessionNumber, stage: STAGE }, 'Already reached this stage - skipping duplicate alert');
     return;
   }
 
