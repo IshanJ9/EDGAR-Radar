@@ -1,4 +1,5 @@
 import { Queue } from 'bullmq';
+import { ScoreOutcome, AltmanZInputs, PiotroskiInputs, BeneishInputs } from './scoring';
 
 export const QUEUE_NAMES = {
   FILING_DISCOVERED: 'filing.discovered',
@@ -23,13 +24,21 @@ export interface FilingParsedJobData extends FilingDiscoveredJobData {
 }
 
 /**
- * `scores` is `null` for now - Phase 4's Scoring Worker is deliberately a
- * stub (per ROADMAP.md, the real M-Score/Z-Score/F-Score math is Phase 5's
- * job). `null` is used rather than fabricated numbers so nothing downstream
- * can mistake a stub result for a real score.
+ * Each score is independently either a real `{status: 'ok', value,
+ * classification, inputs}` result or an honest `{status:
+ * 'insufficient-history', reason}` (see src/scoring.ts) - never a
+ * fabricated number. Real coverage varies a lot by company (confirmed
+ * against the full 196-company universe in Phase 5 step 1), so a filing
+ * can easily have some scores computed and others not.
  */
+export interface FilingScores {
+  altmanZ: ScoreOutcome<AltmanZInputs>;
+  piotroskiF: ScoreOutcome<PiotroskiInputs>;
+  beneishM: ScoreOutcome<BeneishInputs>;
+}
+
 export interface ScoresUpdatedJobData extends FilingParsedJobData {
-  scores: null;
+  scores: FilingScores;
 }
 
 /**
