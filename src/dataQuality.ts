@@ -6,7 +6,7 @@ import { UsGaapFact } from './sec';
 // real company's real numbers as false positives.
 const MAX_PLAUSIBLE_MAGNITUDE = 5e13; // $50 trillion
 
-const KNOWN_UNITS = new Set(['USD']);
+const KNOWN_UNITS = new Set(['USD', 'shares']);
 
 export interface FactValidationResult {
   valid: boolean;

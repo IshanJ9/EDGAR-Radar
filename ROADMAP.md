@@ -144,7 +144,7 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Goal:** add value where it's genuinely earned — not everywhere.
 
 **Build:**
-- [ ] Implement Beneish M-Score, Altman Z-Score, Piotroski F-Score as pure functions over `filing_facts` (no ML — this is math)
+- [x] Implement Beneish M-Score, Altman Z-Score, Piotroski F-Score as pure functions over `filing_facts` (no ML — this is math)
 - [ ] Wire these into the (previously stubbed) Scoring Worker
 - [ ] "Not enough history yet" fallback for companies with too few quarters
 - [ ] Pick an embeddings approach (start with a hosted API) and implement risk-factor-section diffing between a company's consecutive 10-Ks

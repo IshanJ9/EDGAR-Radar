@@ -1,6 +1,56 @@
 import { pool } from '../db';
-import { fetchCompanyFacts, mostRecentFact, padCik, REVENUE_TAGS, NET_INCOME_TAGS, UsGaapFact } from '../sec';
+import {
+  fetchCompanyFacts,
+  mostRecentFact,
+  annualFacts,
+  padCik,
+  REVENUE_TAGS,
+  NET_INCOME_TAGS,
+  ASSETS_TAGS,
+  LIABILITIES_TAGS,
+  CURRENT_ASSETS_TAGS,
+  CURRENT_LIABILITIES_TAGS,
+  RETAINED_EARNINGS_TAGS,
+  OPERATING_INCOME_TAGS,
+  STOCKHOLDERS_EQUITY_TAGS,
+  OPERATING_CASH_FLOW_TAGS,
+  LONG_TERM_DEBT_TAGS,
+  SHARES_OUTSTANDING_TAGS,
+  GROSS_PROFIT_TAGS,
+  RECEIVABLES_TAGS,
+  PPE_TAGS,
+  DEPRECIATION_TAGS,
+  SGA_TAGS,
+  UsGaapFact,
+} from '../sec';
 import { validateFact } from '../dataQuality';
+
+// Phase 5's ratio scores (Altman Z", Piotroski F-Score, Beneish M-Score)
+// each need 2 fiscal years of several balance-sheet/income-statement line
+// items. This is purely additive to the existing single-most-recent
+// Revenue/NetIncomeLoss storage below - same idempotent EAV table, no
+// schema change, and no extra SEC calls (fetchCompanyFacts already returns
+// this data, it just wasn't being extracted before).
+const ANNUAL_FACT_CONCEPTS: { tags: string[]; unit: 'USD' | 'shares' }[] = [
+  { tags: REVENUE_TAGS, unit: 'USD' },
+  { tags: NET_INCOME_TAGS, unit: 'USD' },
+  { tags: ASSETS_TAGS, unit: 'USD' },
+  { tags: LIABILITIES_TAGS, unit: 'USD' },
+  { tags: CURRENT_ASSETS_TAGS, unit: 'USD' },
+  { tags: CURRENT_LIABILITIES_TAGS, unit: 'USD' },
+  { tags: RETAINED_EARNINGS_TAGS, unit: 'USD' },
+  { tags: OPERATING_INCOME_TAGS, unit: 'USD' },
+  { tags: STOCKHOLDERS_EQUITY_TAGS, unit: 'USD' },
+  { tags: OPERATING_CASH_FLOW_TAGS, unit: 'USD' },
+  { tags: LONG_TERM_DEBT_TAGS, unit: 'USD' },
+  { tags: SHARES_OUTSTANDING_TAGS, unit: 'shares' },
+  { tags: GROSS_PROFIT_TAGS, unit: 'USD' },
+  { tags: RECEIVABLES_TAGS, unit: 'USD' },
+  { tags: PPE_TAGS, unit: 'USD' },
+  { tags: DEPRECIATION_TAGS, unit: 'USD' },
+  { tags: SGA_TAGS, unit: 'USD' },
+];
+const ANNUAL_HISTORY_YEARS = 2;
 
 async function upsertCompany(cik: string, entityName: string): Promise<void> {
   await pool.query(
@@ -32,8 +82,7 @@ async function insertQuarantinedFact(cik: string, tag: string, unit: string, fac
   );
 }
 
-export async function upsertFact(cik: string, tag: string, fact: UsGaapFact): Promise<void> {
-  const unit = 'USD';
+export async function upsertFact(cik: string, tag: string, fact: UsGaapFact, unit: string = 'USD'): Promise<void> {
   const validation = validateFact(unit, fact);
   if (!validation.valid) {
     await insertQuarantinedFact(cik, tag, unit, fact, validation.reason!);
@@ -48,10 +97,10 @@ export async function upsertFact(cik: string, tag: string, fact: UsGaapFact): Pr
   // known-true figure (the filing's own filed date).
   await pool.query(
     `INSERT INTO filing_facts (cik, tag, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date, effective_from)
-     VALUES ($1, $2, 'USD', $3, $4, $5, $6, $7, $8, $9, $10, $10)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
      ON CONFLICT (cik, tag, unit, period_end, COALESCE(period_start, '0001-01-01'), accn)
      DO UPDATE SET value = EXCLUDED.value, form = EXCLUDED.form, filed_date = EXCLUDED.filed_date, updated_at = now()`,
-    [cik, tag, fact.val, fact.start ?? null, fact.end, fact.fy, fact.fp, fact.form, fact.accn, fact.filed],
+    [cik, tag, unit, fact.val, fact.start ?? null, fact.end, fact.fy, fact.fp, fact.form, fact.accn, fact.filed],
   );
 }
 
@@ -73,6 +122,14 @@ export async function upsertCompanyFacts(cik: string): Promise<{ cik: string; en
   }
   if (netIncome) {
     await upsertFact(paddedCik, netIncome.tag, netIncome.fact);
+  }
+
+  for (const concept of ANNUAL_FACT_CONCEPTS) {
+    const result = annualFacts(data, concept.tags, concept.unit, ANNUAL_HISTORY_YEARS);
+    if (!result) continue;
+    for (const fact of result.facts) {
+      await upsertFact(paddedCik, result.tag, fact, result.unit);
+    }
   }
 
   return { cik: paddedCik, entityName: data.entityName };
