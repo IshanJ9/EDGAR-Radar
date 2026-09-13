@@ -220,6 +220,8 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
       - **Deployed (PR #7, `996f1af`):** the guard regression test ran on GitHub for the first time and passed (7 suites / 70 tests); push run #12 and its deploy and smoke check were green. See PROGRESS.md.
 
 **Done when:** `docker-compose up` works from a clean checkout with only `.env.example` copied; a failing-test PR can't merge; merge to `main` deploys automatically; a secret-scan finds nothing.
+- **"a secret-scan finds nothing" - verified 2026-09-14.** All 63 commits GitHub serves, including every PR's `refs/pull/N/head`: gitleaks 8.30.1 found no leaks (and the 6 merge commits it skips add no content of their own); a literal search for the local `JWT_SECRET` and slices of all four private keys found none; the VM's generated secrets, compared by SHA-256 only, are absent. Each detector was proven to fire first - gitleaks caught a planted token that had been committed and then deleted. Not covered: GitHub content outside git (PR text, Actions logs) and GitHub's own scanning alerts. See PROGRESS.md.
+- **"a failing-test PR can't merge" - NOT yet enforced.** CI goes red on a failing PR (proven by PRs #2 and #6), but the Merge button stayed enabled on both; branch protection on `Main` is still needed.
 
 ---
 
