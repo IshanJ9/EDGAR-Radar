@@ -175,7 +175,21 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 - [x] Contract tests for the SEC client using `nock` — **remove any test that hits real SEC**
 - [x] Structured logging (`pino`)
 - [x] GitHub Actions: lint + test + build on every PR
-- [ ] AWS setup: RDS, EC2/Fargate, S3, SES, Secrets Manager
+- [x] Azure setup: Azure Database for PostgreSQL, Container Apps, Blob Storage, an email-sending service, Key Vault
+      (originally written as AWS - RDS/EC2-Fargate/S3/SES/Secrets Manager - before this step started; changed to Azure since the user has an Azure account, not AWS, and Phase 3's real-world 48h validation already ran on a separate Azure VM. See PROGRESS.md for the full reasoning and service-by-service mapping.)
+      **IN PROGRESS, blocked on one user action. See PROGRESS.md's two dated step-8 entries for the full story - the second (2026-09-13) corrects a wrong conclusion in the first.** The user does not want to incur any Azure cost, and that constraint decides this whole step.
+      - [x] Resource group — `edgar-radar-rg` (genuinely free).
+      - [x] Blob Storage — `edgarradarij` (`Standard_LRS`/StorageV2/Hot, TLS 1.2 min, public blob access off). No standing charge; $0.00 at this volume. Write path not yet exercised.
+      - [x] Key Vault — `edgar-radar-kv-ij` (`standard`). Standard vaults have no per-vault charge at all, only $0.03/10k operations, so this is genuinely $0 here. Write path not yet exercised.
+      - [ ] ~~Container Apps~~ — blocked by a real, confirmed platform restriction on this subscription (policy-disallowed in every region tried except Central India, which reports zero quota with nothing deployed). **But the first attempt's conclusion that this meant "no free Azure compute exists" was wrong:** App Service was never tested. An `F1` Linux plan (`tier: LinuxFree`) created fine in Central India and — contrary to the common claim that the Linux Free tier can't run custom containers — served a real Docker image at **HTTP 200** on a live URL. Created, verified, then deleted once hosting moved off Azure; recreatable in two commands.
+      - [ ] Azure Database for PostgreSQL — no free tier on any SKU. Neon's Azure-native integration (the user's first choice) is genuinely unavailable here: the `Neon.Postgres` namespace is *invalid*, not merely unregistered, consistent with Azure for Students blocking Marketplace offers.
+      - [ ] Email-sending service — **deliberately dropped, not blocked.** Azure Communication Services Email has no free tier, and Phase 3 step 5 already built and tested Slack webhook alerting at $0, which the user chose over email at the time. Superseded rather than deferred.
+
+      **Hosting decision (deviates from the locked "Cloud: Azure" choice; put to the user explicitly, not taken unilaterally):** Azure cannot host this stack at $0 — F1 gives 60 CPU-min/day with no Always On and 1GB RAM shared across all apps, which won't hold an API plus three Node workers. Re-checked against current sources, **no mainstream PaaS offered a genuinely free always-on background worker in 2026** (Fly.io free tier gone since 2024; Koyeb closed free signups after its Feb 2026 Mistral acquisition; Render free spins down, always-on starts at $7/mo/service). The user chose to run the entire existing `docker-compose.yml` — API + 3 workers + Redis + Postgres — on a single **Oracle Cloud Always Free VM** (2 OCPU/12GB ARM after Oracle's quiet June 2026 halving; 200GB storage). No re-architecture needed, since step 2's compose file already wires exactly those services. Supabase free Postgres (500MB, pauses after 7 days idle) is the documented fallback and is a one-line `DATABASE_URL` change.
+
+      **DONE 2026-09-13 — deployed and serving at `http://80.225.253.10:3000`, at genuinely $0.** Oracle Always Free VM `edgar-radar-vm` (`VM.Standard.A1.Flex`, exactly 2 OCPU/12GB, Ubuntu 24.04 `aarch64`, `ap-mumbai-1`) runs the full `docker-compose.yml` stack — API, all 3 workers, Redis, Postgres. Verified from the public internet, not just from inside the box: `GET /companies/0000320193` returns **HTTP 200** `{"cik":"0000320193","entityName":"Apple Inc."}`, exercising Express → repository → live rate-limited SEC call → Postgres → response; `migrate` exited 0 with all 16 tables created; all 4 services at `RestartCount=0`; all 3 BullMQ queues registered in Redis. The `arm64` build risk did not materialise — all 5 images built cleanly on the VM, which also avoided needing a container registry.
+      - Hardened during deployment: ingress limited to TCP 22/3000 only, with **port 5432 confirmed refused from outside**; Oracle's Ubuntu `iptables` `REJECT` rule (which would have silently blocked 3000 despite the cloud security list) opened and persisted; Postgres rebound to loopback via a **deployment-only, uncommitted** `docker-compose.override.yml`, since the base file's `5432:5432` is correct for local development but unsafe on a public host — and Docker's published ports bypass the host firewall, so only the cloud security list would otherwise have protected it. That override needs Compose's `!override` tag, because Compose merges rather than replaces sequence values. It also sets `restart: unless-stopped` on all long-running services for Oracle's maintenance reboots.
+      - [ ] **Known gap — no off-box Postgres backup yet.** Oracle Always Free has a documented idle-reclamation policy and has already changed its terms without announcement (June 2026 ARM halving). Since this project's whole value is the ingested data, a scheduled `pg_dump` pushed off the VM is the next real hardening step.
 - [ ] Deploy-on-merge-to-main added to the GitHub Actions workflow
 
 **Windows note:** use Docker Desktop with the WSL2 backend.
@@ -196,7 +210,7 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 
 **Build:**
 - [ ] Write `ARCHITECTURE.md` documenting the 100 → 10,000 → 1,000,000-user scaling narrative (see the full planning doc for the detailed version)
-- [ ] Implement an RDS read replica; route read-heavy endpoints to it
+- [ ] Implement an Azure Database for PostgreSQL read replica; route read-heavy endpoints to it
 - [ ] Add Redis response caching for hot endpoints
 - [ ] Load-test before/after with `autocannon`; record real numbers
 

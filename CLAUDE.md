@@ -31,7 +31,7 @@ Don't deviate from these without asking first:
 - Web framework: Express
 - Database: PostgreSQL
 - Queue (from Phase 4 onward, not before): Redis + BullMQ
-- Cloud (from Phase 6 onward, not before): AWS
+- Cloud (from Phase 6 onward, not before): Azure — changed from an original AWS plan at Phase 6 step 8 (the user has an Azure account, not AWS; Phase 3's real-world 48h validation was already running on a separate Azure VM). See PROGRESS.md for the full reasoning and the AWS→Azure service mapping.
 - Testing: Jest + Supertest; `nock` for mocking external HTTP calls
 
 ## Explicit "do not use yet"
@@ -55,7 +55,7 @@ mistake, not a shortcut — say so and hold off, even if asked.
 - From Phase 6 onward (once GitHub Actions CI exists), switch to feature
   branches + pull requests — that's the point where "a failing-test PR
   can't merge" actually means something. Don't bother with PRs before then.
-- Never commit secrets: `.env` values, JWT signing secrets, AWS
+- Never commit secrets: `.env` values, JWT signing secrets, Azure
   credentials, database passwords. If one is accidentally committed,
   treat it as compromised and rotate it — removing it in a later commit
   isn't enough, since git history keeps it either way.
