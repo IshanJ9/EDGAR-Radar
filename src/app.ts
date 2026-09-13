@@ -21,4 +21,23 @@ app.use(express.json());
 app.use('/companies', companiesRouter);
 app.use('/auth', authRouter);
 app.use('/watchlist', watchlistRouter);
-app.use('/admin/queues', bullBoardRouter);
+
+// Bull Board is an unauthenticated, WRITE-CAPABLE admin surface - it can
+// retry, promote and delete jobs, not just display them. That was fine while
+// this app only ever ran on localhost, which is what bullBoard.ts's own
+// comment anticipated ("would need requireAuth ... before ever being
+// deployed"). Phase 6 step 8 deployed the stack to a public IP, at which
+// point it became genuinely reachable by anyone: a request to
+// /admin/queues from the open internet returned 200.
+//
+// Gated off by default rather than on, so that forgetting to set anything is
+// the safe outcome instead of the exposed one. Set ENABLE_BULL_BOARD=true for
+// local development; in production, reach it by tunnelling instead
+// (`ssh -L 3000:localhost:3000 ...`), which needs no public exposure at all.
+//
+// An auth gate in front of it was considered and rejected for now: this
+// deployment has no TLS yet, so HTTP basic auth would put credentials on the
+// wire in the clear - strictly worse than not serving the route.
+if (process.env.ENABLE_BULL_BOARD === 'true') {
+  app.use('/admin/queues', bullBoardRouter);
+}
