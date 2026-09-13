@@ -80,6 +80,11 @@ services:
       REDIS_URL: redis://redis:6379
       EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
       JWT_SECRET: ${JWT_SECRET}
+      # Off unless explicitly enabled - see .env.example and src/app.ts. The
+      # `:-` default matters: without it, an unset ENABLE_BULL_BOARD would
+      # make Compose warn on every `up`, and the safe state would depend on
+      # the variable being present rather than on it being absent.
+      ENABLE_BULL_BOARD: ${ENABLE_BULL_BOARD:-}
     depends_on:
       postgres:
         condition: service_healthy
