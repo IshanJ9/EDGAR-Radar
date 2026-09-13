@@ -3,15 +3,32 @@
  * jest.integration.config.js too).
  *
  * Deliberately does NOT load the real `.env` (no `dotenv/config` here).
- * `src/sec.ts` throws at import time if `EDGAR_CONTACT_EMAIL` is unset, and
- * both scoring.ts and filingText.ts import it transitively - so without
- * something setting this, `npm test` would only work on a machine that
- * already has a real, populated `.env`, which defeats the point of a unit
- * test. This value is a placeholder for module-load safety only: these
- * unit tests mock every network/DB boundary (see scoring.test.ts) and never
- * make a real SEC call, so it never needs to be a real, working address.
+ * `src/sec.ts` throws at import time if `EDGAR_CONTACT_EMAIL` is unset (via
+ * `requireEnv`, src/config.ts), and both scoring.ts and filingText.ts import
+ * it transitively - so without something setting this, `npm test` would only
+ * work on a machine that already has a real, populated `.env`, which defeats
+ * the point of a unit test. This value is a placeholder for module-load
+ * safety only: these unit tests mock every network/DB boundary (see
+ * scoring.test.ts) and never make a real SEC call, so it never needs to be a
+ * real, working address.
  */
 process.env.EDGAR_CONTACT_EMAIL ??= 'test-placeholder@example.com';
+
+/**
+ * The same problem for DATABASE_URL, which src/db.ts has validated at import
+ * since Phase 6's failure case 2 (src/config.ts). scoring.test.ts calls
+ * `jest.mock('../repositories/scoringRepository')` with no factory, and to
+ * generate that automock Jest loads the real module - which imports db.ts.
+ * Without this line `npm test` failed with "DATABASE_URL is not set" before a
+ * single test ran; that was observed, not predicted.
+ *
+ * The placeholder never connects anywhere: `pg` only opens a connection on
+ * the first query, no unit test issues one, and the `.invalid` top-level
+ * domain is reserved so it can never resolve even if something did try.
+ * `??=` leaves the real URL that scripts/runIntegrationTests.ts passes to the
+ * integration suite untouched.
+ */
+process.env.DATABASE_URL ??= 'postgresql://placeholder:placeholder@unit-tests-never-connect.invalid:5432/placeholder';
 
 /**
  * Phase 6, step 5: structurally enforces ROADMAP.md's "remove any test that

@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 import { ScoreOutcome, AltmanZInputs, PiotroskiInputs, BeneishInputs } from './scoring';
+import { requireEnv } from './config';
 
 export const QUEUE_NAMES = {
   FILING_DISCOVERED: 'filing.discovered',
@@ -7,7 +8,11 @@ export const QUEUE_NAMES = {
   SCORES_UPDATED: 'scores.updated',
 } as const;
 
-const connection = { url: process.env.REDIS_URL! };
+// requireEnv, not `process.env.REDIS_URL!`: the non-null assertion only
+// silenced TypeScript. At runtime an undefined url made BullMQ fall back to
+// localhost:6379 and retry forever, logging ECONNREFUSED without naming the
+// missing variable. See src/config.ts.
+const connection = { url: requireEnv('REDIS_URL') };
 
 export interface FilingDiscoveredJobData {
   cik: string;

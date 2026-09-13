@@ -1,11 +1,15 @@
 import 'dotenv/config';
+// Must stay directly after dotenv and before every other import - see
+// src/bootstrap/validateApiEnv.ts.
+import '../src/bootstrap/validateNotificationWorkerEnv';
 import { Worker } from 'bullmq';
 import { QUEUE_NAMES } from '../src/queues';
 import { processScoresUpdated } from '../src/notificationWorker';
 import { createLogger } from '../src/logger';
+import { requireEnv } from '../src/config';
 
 const logger = createLogger('notification-worker');
-const connection = { url: process.env.REDIS_URL! };
+const connection = { url: requireEnv('REDIS_URL') };
 
 const worker = new Worker(QUEUE_NAMES.SCORES_UPDATED, processScoresUpdated, { connection });
 
