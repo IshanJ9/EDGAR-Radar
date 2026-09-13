@@ -1,4 +1,5 @@
 import { Pool, types } from 'pg';
+import { requireEnv } from './config';
 
 // pg's default DATE parser converts 'YYYY-MM-DD' into a JS Date at local
 // midnight, then callers that read it back via toISOString() (or any code,
@@ -9,4 +10,9 @@ import { Pool, types } from 'pg';
 // component in Postgres, so there's nothing a JS Date usefully adds.
 types.setTypeParser(types.builtins.DATE, (value) => value);
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// requireEnv rather than passing process.env.DATABASE_URL straight through:
+// with an undefined connection string, `pg` silently falls back to localhost
+// and only connects on the first query, so a missing DATABASE_URL produced a
+// service that started and logged exactly like a healthy one. See
+// src/config.ts.
+export const pool = new Pool({ connectionString: requireEnv('DATABASE_URL') });

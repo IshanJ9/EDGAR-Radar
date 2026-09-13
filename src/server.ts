@@ -1,4 +1,7 @@
 import 'dotenv/config';
+// Must stay directly after dotenv and before every other import - see
+// src/bootstrap/validateApiEnv.ts.
+import './bootstrap/validateApiEnv';
 import { app } from './app';
 import { createLogger } from './logger';
 

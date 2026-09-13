@@ -1,10 +1,8 @@
 import { TokenBucket } from './rateLimiter';
 import { fetchWithRetry } from './retry';
+import { requireEnv } from './config';
 
-const CONTACT_EMAIL = process.env.EDGAR_CONTACT_EMAIL;
-if (!CONTACT_EMAIL) {
-  throw new Error('Missing EDGAR_CONTACT_EMAIL in .env (see .env.example).');
-}
+const CONTACT_EMAIL = requireEnv('EDGAR_CONTACT_EMAIL');
 const USER_AGENT = `EDGAR Radar (${CONTACT_EMAIL})`;
 
 // SEC's hard limit is 10 req/s; CLAUDE.md says stay at 5-8/s, so 7 targets

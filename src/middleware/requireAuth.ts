@@ -1,10 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { requireEnv } from '../config';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('Missing JWT_SECRET in .env (see .env.example).');
-}
+const JWT_SECRET = requireEnv('JWT_SECRET');
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const header = req.header('authorization');
@@ -16,7 +14,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET!) as jwt.JwtPayload & { sub: number; email: string };
+    const payload = jwt.verify(token, JWT_SECRET) as jwt.JwtPayload & { sub: number; email: string };
     req.user = { id: payload.sub, email: payload.email };
     next();
   } catch {

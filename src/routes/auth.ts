@@ -3,15 +3,13 @@ import { z } from 'zod';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { createUser, getUserByEmail, DuplicateEmailError } from '../repositories/userRepository';
+import { requireEnv } from '../config';
 
 const router = Router();
 
 const SALT_ROUNDS = 10;
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('Missing JWT_SECRET in .env (see .env.example).');
-}
+const JWT_SECRET = requireEnv('JWT_SECRET');
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -70,7 +68,7 @@ router.post('/login', async (req, res) => {
       return;
     }
 
-    const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET!, { expiresIn: '1h' });
+    const token = jwt.sign({ sub: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
     res.json({ token });
   } catch (err) {
     req.log.error({ err }, 'Failed to log in user');
