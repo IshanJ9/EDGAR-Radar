@@ -9,11 +9,22 @@
 # Phase 6 step 1) - containerizing them needs that fixed first, not papered
 # over with a Dockerfile-level path hack.
 #
+# Restart policies: every long-running service below uses
+# `restart: unless-stopped`, so a crashed container, a Docker daemon restart,
+# or a host reboot brings the stack back on its own, while a deliberate
+# `docker compose stop` is still respected. This was previously set only in
+# the production VM's uncommitted docker-compose.override.yml, so a fresh
+# deployment would not have had it. Its absence is what turned Phase 3's
+# real-world 48h run into a failure: a Postgres restart during an unattended
+# OS update crashed the poller, and nothing brought it back for 3.5 days (see
+# PROGRESS.md). The one-shot `migrate` job stays `restart: "no"`.
+#
 # No top-level `version:` key - obsolete in current Compose (v5.3.1 here).
 
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       # Compose-only credentials for this container, independent of the
       # DATABASE_URL in .env used for host-based (non-Docker) `npm run dev`.
@@ -40,6 +51,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     # BullMQ explicitly requires Redis to run with no key-eviction policy -
     # under memory pressure an eviction policy can silently drop queued job
     # data, which is a correctness issue for exactly the kind of at-least-
@@ -70,6 +82,7 @@ services:
     build:
       context: .
       target: runtime
+    restart: unless-stopped
     # `runtime`'s default CMD (dist/src/server.js) - the API needs no
     # override, unlike the three workers below.
     ports:
@@ -97,6 +110,7 @@ services:
     build:
       context: .
       target: runtime
+    restart: unless-stopped
     command: ["node", "dist/scripts/parserWorker.js"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
@@ -114,6 +128,7 @@ services:
     build:
       context: .
       target: runtime
+    restart: unless-stopped
     command: ["node", "dist/scripts/scoringWorker.js"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
@@ -131,6 +146,7 @@ services:
     build:
       context: .
       target: runtime
+    restart: unless-stopped
     command: ["node", "dist/scripts/notificationWorker.js"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
