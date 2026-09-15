@@ -233,7 +233,8 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Goal:** a real, numbered scaling story — plus one bottleneck actually built and measured.
 
 **Build:**
-- [ ] Write `ARCHITECTURE.md` documenting the 100 → 10,000 → 1,000,000-user scaling narrative (see the full planning doc for the detailed version)
+- [x] Write `ARCHITECTURE.md` documenting the 100 → 10,000 → 1,000,000-user scaling narrative (see the full planning doc for the detailed version)
+      **Done 2026-09-16.** No planning doc existed (`docs/` is empty), so it was written from the code and from measurements taken that day on the dev database, the Oracle production VM and the Azure Phase 3 VM. Separates the data axis (companies, capped by SEC's 10 req/s) from the user axis (read traffic and notification fan-out); ranks 8 bottlenecks present in today's code, including a **real bug** — the SEC rate limiter is per process, so the API and parser worker together can exceed SEC's limit; then names specific components per stage with stated assumptions and derived load. Measured vs assumed numbers are labelled. See PROGRESS.md.
 - [ ] Implement an Azure Database for PostgreSQL read replica; route read-heavy endpoints to it
 - [ ] Add Redis response caching for hot endpoints
 - [ ] Load-test before/after with `autocannon`; record real numbers
