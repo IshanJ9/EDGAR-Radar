@@ -37,11 +37,25 @@ jobs:
           docker compose up -d --build
           echo "compose up returned after $(( $(date +%s) - start ))s"
 
+      # Reads the container's recorded state instead of `docker compose wait`:
+      # on an already-exited one-shot service, `wait` prints "no containers
+      # for project" and exits 1 even though the service exited 0 (reproduced
+      # locally with Compose 5.3.1). That failed the first run of this job.
       - name: Migrations complete
         run: |
           set -euo pipefail
-          code=$(timeout 300 docker compose wait migrate)
-          echo "migrate exit code: $code"
+          cid=$(docker compose ps -aq migrate)
+          test -n "$cid"
+          state=unknown
+          for i in $(seq 1 150); do
+            state=$(docker inspect -f '{{.State.Status}}' "$cid")
+            if [ "$state" = exited ]; then break; fi
+            sleep 2
+          done
+          code=$(docker inspect -f '{{.State.ExitCode}}' "$cid")
+          echo "migrate state=$state exit code=$code"
+          docker compose logs --no-color migrate | tail -5
+          test "$state" = exited
           test "$code" = "0"
 
       - name: Services running with no startup refusals
