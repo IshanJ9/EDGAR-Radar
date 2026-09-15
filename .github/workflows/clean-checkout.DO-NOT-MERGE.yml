@@ -1,0 +1,88 @@
+name: DO-NOT-MERGE clean checkout
+
+# DO NOT MERGE. Throwaway verification for Phase 6's "Done when" item:
+# "`docker-compose up` works from a clean checkout with only `.env.example`
+# copied." The same test failed on the developer's Windows machine because
+# the image build downloads the embedding model from Hugging Face's CDN, and
+# that route was slow and intermittent from there that day. A fresh GitHub
+# runner removes that machine and its network from the result.
+#
+# Only database-backed endpoints are exercised - the fresh database is empty,
+# so any company endpoint would call the real SEC API, which CLAUDE.md forbids
+# from automated jobs. Needs no secrets.
+on:
+  pull_request:
+
+jobs:
+  clean-checkout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy only .env.example
+        run: |
+          set -euo pipefail
+          echo "env-like files in the checkout before copying:"
+          ls -a | grep -E '^\.env' || true
+          cp .env.example .env
+          echo "git status (ignored files shown):"
+          git status --porcelain --ignored
+
+      - name: docker compose up --build
+        run: |
+          set -euo pipefail
+          docker compose version
+          start=$(date +%s)
+          docker compose up -d --build
+          echo "compose up returned after $(( $(date +%s) - start ))s"
+
+      - name: Migrations complete
+        run: |
+          set -euo pipefail
+          code=$(timeout 300 docker compose wait migrate)
+          echo "migrate exit code: $code"
+          test "$code" = "0"
+
+      - name: Services running with no startup refusals
+        run: |
+          set -euo pipefail
+          sleep 20
+          docker compose ps -a
+          fail=0
+          for s in api worker-parser worker-scoring worker-notification; do
+            cid=$(docker compose ps -q "$s")
+            state=$(docker inspect -f '{{.State.Status}}' "$cid")
+            restarts=$(docker inspect -f '{{.RestartCount}}' "$cid")
+            refusals=$(docker logs "$cid" 2>&1 | grep -c 'Refusing to start' || true)
+            started=$(docker logs "$cid" 2>&1 | grep -cE 'listening|started' || true)
+            echo "$s state=$state restarts=$restarts refusals=$refusals startLines=$started"
+            if [ "$state" != running ] || [ "$refusals" != 0 ] || [ "$started" -lt 1 ]; then fail=1; fi
+          done
+          exit $fail
+
+      - name: API works (database-only endpoints, no SEC calls)
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:3000/admin/queues && break; sleep 2; done
+          email="clean-checkout-${GITHUB_RUN_ID}@example.com"
+          body=$(jq -nc --arg e "$email" '{email: $e, password: "clean-checkout-pass-123"}')
+          reg=$(curl -s -o /dev/null -w '%{http_code}' -H 'content-type: application/json' -d "$body" http://127.0.0.1:3000/auth/register)
+          echo "POST /auth/register -> $reg"; test "$reg" = 201
+          token=$(curl -s -H 'content-type: application/json' -d "$body" http://127.0.0.1:3000/auth/login | jq -r .token)
+          test "$(printf %s "$token" | awk -F. '{print NF}')" = 3
+          echo "POST /auth/login -> JWT issued (3 segments)"
+          wl=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" http://127.0.0.1:3000/watchlist)
+          echo "GET /watchlist with JWT -> $wl"; test "$wl" = 200
+          aq=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/admin/queues)
+          echo "GET /admin/queues -> $aq (expected 404)"; test "$aq" = 404
+
+      - name: Diagnostics
+        if: always()
+        run: |
+          docker compose ps -a || true
+          docker compose logs --no-color --tail 80 || true
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v || true
