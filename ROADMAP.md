@@ -111,6 +111,7 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 - [x] Deliberately skip one filing — confirm nightly reconciliation finds and backfills it
 
 **Done when:** runs unattended 48+ hours (not verified within this session — see PROGRESS.md), zero duplicates, zero permanent gaps, survives one injected failure, sends exactly one alert when you break something on purpose.
+- **Real-world 48h run on the Azure VM, checked 2026-09-15 (~105h in): NOT met.** The poller completed 41 cycles exactly 30 minutes apart, then died after ~20.5h when an Ubuntu unattended-upgrade (`libc6`) restarted Postgres: the resulting `FATAL 57P01` went unhandled (no `pool.on('error')` handler) and nothing restarted the process. Zero duplicates ✅; nightly reconciliation ran all 4 nights (fixed 2 discrepancies) but new-filing discovery stopped — gap open, expected to be recoverable via the poller's cursor; heartbeat detected the outage within 75 min but sent **68** alerts (repeat window = 60-min threshold) instead of one; no failure was injected on purpose. Root cause and fix plan in PROGRESS.md.
 
 ---
 
