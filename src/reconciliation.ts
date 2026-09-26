@@ -1,22 +1,16 @@
-import { readFileSync, unlinkSync, existsSync } from 'fs';
+import { unlinkSync, existsSync } from 'fs';
 import path from 'path';
 import { downloadBulkCompanyFacts, forEachCompanyFacts } from './bulkData';
 import { mostRecentFact, REVENUE_TAGS, NET_INCOME_TAGS } from './sec';
-import { upsertFact, getFactsByCik } from './repositories/companyRepository';
+import { upsertFact, getFactsByCik, getCompanyByCik } from './repositories/companyRepository';
 import { startReconciliationRun, completeReconciliationRun, failReconciliationRun } from './repositories/reconciliationRepository';
+import { findProjectRoot, loadUniverse } from './universe';
 
-interface UniverseEntry {
-  cik: string;
-  ticker: string;
-  name: string;
-}
-
-function loadUniverse(): UniverseEntry[] {
-  const universePath = path.join(__dirname, '..', 'data', 'company-universe.json');
-  return JSON.parse(readFileSync(universePath, 'utf-8'));
-}
-
-const CACHE_DIR = path.join(__dirname, '..', '.cache');
+// At the project root, not beside this file: compiled, this file lives in
+// dist/src/, so the old `__dirname`-relative path pointed inside dist/. In the
+// production image the root is /app, and the Dockerfile makes /app/.cache
+// writable by the non-root user the containers run as.
+const CACHE_DIR = path.join(findProjectRoot(), '.cache');
 const ZIP_PATH = path.join(CACHE_DIR, 'companyfacts.zip');
 
 function factKey(tag: string, periodStart: string | null, periodEnd: string): string {
@@ -33,6 +27,7 @@ function factKey(tag: string, periodStart: string | null, periodEnd: string): st
 export async function runReconciliation(): Promise<{
   companiesChecked: number;
   companiesMissingFromBulk: number;
+  companiesNotStored: number;
   discrepanciesFound: number;
 }> {
   const universe = loadUniverse();
@@ -47,6 +42,14 @@ export async function runReconciliation(): Promise<{
   let companiesChecked: number;
   let companiesMissingFromBulk: number;
   let discrepanciesFound = 0;
+  // Universe companies this database has never ingested (post-Phase 7, step
+  // 2). Reconciliation corrects stored facts; it cannot add facts for a
+  // company with no `companies` row - filing_facts' foreign key rejects them,
+  // and that one rejected insert used to fail the whole run. Production held
+  // 2 of the 196 when the poller was first deployed, so this was not
+  // hypothetical. They are skipped and counted; ingesting them is the
+  // backfill's job, not this one's.
+  const notStored: string[] = [];
 
   try {
     if (!existsSync(CACHE_DIR)) {
@@ -62,6 +65,11 @@ export async function runReconciliation(): Promise<{
 
     const { found, missing } = await forEachCompanyFacts(ZIP_PATH, universe.map((c) => c.cik), async (cik, bulkFacts) => {
       const ticker = tickerByCik.get(cik) ?? cik;
+
+      if (!(await getCompanyByCik(cik))) {
+        notStored.push(cik);
+        return;
+      }
 
       const currentFacts = await getFactsByCik(cik);
       const currentByKey = new Map(currentFacts.map((f) => [factKey(f.tag, f.period_start, f.period_end), f.value]));
@@ -88,9 +96,12 @@ export async function runReconciliation(): Promise<{
     for (const cik of missing) {
       console.warn(`  ${tickerByCik.get(cik) ?? cik} (${cik}) not found in bulk archive.`);
     }
+    if (notStored.length > 0) {
+      console.log(`  Skipped ${notStored.length} universe companies not stored yet (nothing to reconcile until they are ingested).`);
+    }
 
     await completeReconciliationRun(runId, companiesChecked, companiesMissingFromBulk, discrepanciesFound);
-    return { companiesChecked, companiesMissingFromBulk, discrepanciesFound };
+    return { companiesChecked, companiesMissingFromBulk, companiesNotStored: notStored.length, discrepanciesFound };
   } catch (err) {
     await failReconciliationRun(runId);
     throw err;

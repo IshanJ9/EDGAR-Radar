@@ -1,19 +1,11 @@
 import 'dotenv/config';
-import { readFileSync } from 'fs';
-import path from 'path';
 import { pool } from '../src/db';
 import { attemptCompanyIngestion } from '../src/companyIngestion';
 import { startOrResumeRun, markCompanySuccess, markCompanyFailed, completeRun, getRunSummary } from '../src/repositories/ingestionRepository';
-
-interface UniverseEntry {
-  cik: string;
-  ticker: string;
-  name: string;
-}
+import { loadUniverse } from '../src/universe';
 
 async function main() {
-  const universePath = path.join(__dirname, '..', 'data', 'company-universe.json');
-  const universe: UniverseEntry[] = JSON.parse(readFileSync(universePath, 'utf-8'));
+  const universe = loadUniverse();
   const allCiks = universe.map((c) => c.cik);
 
   const { run, pendingCiks } = await startOrResumeRun(allCiks);

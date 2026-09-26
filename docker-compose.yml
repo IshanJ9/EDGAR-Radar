@@ -1,13 +1,10 @@
-# Wires the API and the three Phase 4 BullMQ workers to Postgres and Redis.
+# Wires the API, the three Phase 4 BullMQ workers, and the three Phase 3 jobs
+# (poller, reconciliation, heartbeat) to Postgres and Redis.
 #
-# Scope note: this composes only the four services ROADMAP.md's step names
-# ("API + workers + Postgres + Redis") - the ingestion poller, the nightly
-# reconciliation job, and the heartbeat check (Phase 3 scripts, not Phase 4
-# queue workers) are deliberately NOT included here. They also cannot be yet:
-# poller.ts and reconciliation.ts resolve `data/company-universe.json` via
-# `path.join(__dirname, ...)`, which breaks once compiled (see PROGRESS.md,
-# Phase 6 step 1) - containerizing them needs that fixed first, not papered
-# over with a Dockerfile-level path hack.
+# The Phase 3 jobs were left out until post-Phase 7, step 2: they resolved
+# `data/company-universe.json` via `path.join(__dirname, ...)`, which breaks
+# once compiled, so production ran without them and never discovered a new
+# filing on its own. src/universe.ts fixed the path; see PROGRESS.md.
 #
 # Restart policies: every long-running service below uses
 # `restart: unless-stopped`, so a crashed container, a Docker daemon restart,
@@ -25,7 +22,8 @@
 # A process can then send at most (rate + 1) requests in any one-second
 # window, so the sum of (rate + 1) over these services must stay at or under
 # 10 - src/__tests__/secBudget.test.ts reads this file and fails if it does
-# not. Current shares: api 1, worker-parser 2.
+# not. Current shares: api 1, worker-parser 2, poller 2, reconcile 1 -
+# 6 per second sustained, at most 10 in any one second.
 #
 # No top-level `version:` key - obsolete in current Compose (v5.3.1 here).
 
@@ -276,6 +274,81 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # --- Phase 3 jobs, deployed in post-Phase 7, step 2 -----------------------
+  # Each schedules itself with node-cron inside one long-running process, so
+  # each is an ordinary always-on service here. Same image as the API.
+
+  # Checks every company in the universe for new filings every 30 minutes and
+  # enqueues each one as a `filing.discovered` job for worker-parser. Runs a
+  # cycle on start too - cheap (one SEC request per company) and cursor-based,
+  # so a restart never re-enqueues what an earlier cycle already found. With no
+  # cursor yet, the first cycle looks back 24 hours (pollerRepository.ts).
+  poller:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    command: ["node", "dist/scripts/poller.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
+      REDIS_URL: redis://redis:6379
+      EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
+      # Its share of the SEC budget (see the top of this file). 196 companies
+      # at 2 per second is a cycle of about 100 seconds.
+      SEC_REQUESTS_PER_SECOND: "2"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Nightly at 02:00 (container time, UTC): cross-checks stored facts against
+  # SEC's bulk companyfacts.zip (~1.4 GB, streamed to /app/.cache and deleted
+  # afterwards) and corrects any that differ.
+  reconcile:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    command: ["node", "dist/scripts/reconciliation.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
+      EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
+      # It corrects facts, so it invalidates the API's cached responses.
+      CACHE_REDIS_URL: redis://redis-cache:6379
+      # One request a night, but a large one; its share of the SEC budget.
+      SEC_REQUESTS_PER_SECOND: "1"
+      # Every deploy restarts this container; without this, every deploy would
+      # also download 1.4 GB. The nightly schedule is enough.
+      RECONCILE_ON_START: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Every 15 minutes: alerts if the poller has not completed a cycle in the
+  # last ALERT_HEARTBEAT_THRESHOLD_MINUTES. Deliberately a separate process
+  # from the poller - a dead poller cannot report its own death. With no Slack
+  # webhook configured, alerts are logged instead of sent (src/alerting.ts).
+  heartbeat:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    command: ["node", "dist/scripts/heartbeat.js"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
+      ALERT_SLACK_WEBHOOK_URL: ${ALERT_SLACK_WEBHOOK_URL:-}
+      ALERT_HEARTBEAT_THRESHOLD_MINUTES: ${ALERT_HEARTBEAT_THRESHOLD_MINUTES:-60}
+    depends_on:
+      postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully

@@ -87,11 +87,15 @@ COPY --from=build /app/node_modules/@xenova/transformers/.cache ./node_modules/@
 COPY data ./data
 COPY migrations ./migrations
 
-# Drop root. Safe for all four services: none of them writes to disk. (The
-# only writers in this codebase are reconciliation.ts, which streams SEC's
-# 1.4GB bulk zip to a .cache directory, and the one-off buildCompanyUniverse
-# script - neither is one of the four services this image runs, and both would
-# need an explicitly writable volume if they are ever containerized.)
+# The one directory any service writes to. Reconciliation (containerized in
+# post-Phase 7, step 2) streams SEC's ~1.4 GB bulk zip to /app/.cache and
+# deletes it after each run. Created here, while still root, and handed to the
+# `node` user, since everything below runs without root. No volume: the file
+# never needs to outlive a run.
+RUN mkdir -p /app/.cache && chown node:node /app/.cache
+
+# Drop root. Nothing else writes to disk; the one-off buildCompanyUniverse
+# script (the only other writer in the codebase) is not run from this image.
 USER node
 
 # src/server.ts defaults to PORT 3000 when the env var is unset.
