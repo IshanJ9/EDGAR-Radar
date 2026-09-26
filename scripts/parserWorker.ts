@@ -7,8 +7,13 @@ import { QUEUE_NAMES } from '../src/queues';
 import { processFilingDiscovered } from '../src/parserWorker';
 import { createLogger } from '../src/logger';
 import { requireEnv } from '../src/config';
+import { initResponseCache } from '../src/cache';
 
 const logger = createLogger('parser-worker');
+
+// This worker writes new filings' facts, so it must invalidate the API's
+// response cache (Phase 7 step 3). A no-op unless CACHE_REDIS_URL is set.
+initResponseCache();
 const connection = { url: requireEnv('REDIS_URL') };
 
 const worker = new Worker(QUEUE_NAMES.FILING_DISCOVERED, processFilingDiscovered, { connection });

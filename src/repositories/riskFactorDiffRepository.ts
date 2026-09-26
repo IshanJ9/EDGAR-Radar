@@ -1,4 +1,5 @@
 import { pool, Queryable } from '../db';
+import { cacheKeys, responseCache } from '../cache';
 import { padCik } from '../sec';
 import { RiskFactorDiffResult } from '../riskFactorDiff';
 
@@ -29,6 +30,7 @@ export async function upsertRiskFactorDiff(
      DO UPDATE SET summary = EXCLUDED.summary, chunks = EXCLUDED.chunks, computed_at = now()`,
     [padCik(cik), currentAccn, currentFilingDate, priorAccn, priorFilingDate, JSON.stringify(result.summary), JSON.stringify(result.chunks)],
   );
+  await responseCache.invalidate(cacheKeys.riskFactorDiff(cik));
 }
 
 /** Returns the most recently computed diff for a company (by current_filing_date), or null if none exists yet. */

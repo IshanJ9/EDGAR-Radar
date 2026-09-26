@@ -3,6 +3,8 @@ import { CompanyFactsNotFoundError } from '../sec';
 import { pool, Queryable, readDb } from '../db';
 import { CompanyRecord, getCompanyByCik, getFactsByCik, upsertCompanyFacts } from '../repositories/companyRepository';
 import { getOrComputeRiskFactorDiff } from '../riskFactorDiffService';
+import { cacheKeys } from '../cache';
+import { sendAndCache, sendIfCached } from './cachedResponse';
 
 const router = Router();
 
@@ -46,9 +48,12 @@ router.get('/:cik', async (req, res) => {
     return;
   }
 
+  const key = cacheKeys.company(cik);
+  if (await sendIfCached(res, key)) return;
+
   try {
     const { company } = await getOrFetchCompany(cik);
-    res.json(company);
+    sendAndCache(res, key, company);
   } catch (err) {
     if (err instanceof CompanyFactsNotFoundError) {
       res.status(404).json({ error: err.message });
@@ -66,10 +71,13 @@ router.get('/:cik/facts', async (req, res) => {
     return;
   }
 
+  const key = cacheKeys.facts(cik);
+  if (await sendIfCached(res, key)) return;
+
   try {
     const { company, db } = await getOrFetchCompany(cik);
     const facts = await getFactsByCik(cik, db);
-    res.json({ ...company, facts });
+    sendAndCache(res, key, { ...company, facts });
   } catch (err) {
     if (err instanceof CompanyFactsNotFoundError) {
       res.status(404).json({ error: err.message });
@@ -87,13 +95,16 @@ router.get('/:cik/risk-factor-diff', async (req, res) => {
     return;
   }
 
+  const key = cacheKeys.riskFactorDiff(cik);
+  if (await sendIfCached(res, key)) return;
+
   try {
     const diff = await getOrComputeRiskFactorDiff(cik);
     if (!diff) {
       res.status(404).json({ error: 'Not enough 10-K history yet to compute a risk-factor diff for this company.' });
       return;
     }
-    res.json(diff);
+    sendAndCache(res, key, diff);
   } catch (err) {
     req.log.error({ err }, 'Failed to get risk-factor diff');
     res.status(500).json({ error: 'Internal server error' });

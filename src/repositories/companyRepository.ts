@@ -1,4 +1,5 @@
 import { pool, Queryable } from '../db';
+import { cacheKeys, responseCache } from '../cache';
 import {
   fetchCompanyFacts,
   mostRecentFact,
@@ -59,6 +60,11 @@ async function upsertCompany(cik: string, entityName: string): Promise<void> {
      ON CONFLICT (cik) DO UPDATE SET entity_name = EXCLUDED.entity_name, updated_at = now()`,
     [cik, entityName],
   );
+  // Both bodies carry the company's name. Invalidation lives here, at the
+  // write itself, so every writer is covered - the API, the parser worker, and
+  // the host scripts - rather than only the paths that emit `filing.parsed`.
+  // See src/cache.ts.
+  await responseCache.invalidate(cacheKeys.company(cik), cacheKeys.facts(cik));
 }
 
 async function insertQuarantinedFact(cik: string, tag: string, unit: string, fact: UsGaapFact, reason: string): Promise<void> {
@@ -102,6 +108,10 @@ export async function upsertFact(cik: string, tag: string, fact: UsGaapFact, uni
      DO UPDATE SET value = EXCLUDED.value, form = EXCLUDED.form, filed_date = EXCLUDED.filed_date, updated_at = now()`,
     [cik, tag, unit, fact.val, fact.start ?? null, fact.end, fact.fy, fact.fp, fact.form, fact.accn, fact.filed],
   );
+  // Called directly by reconciliation as well as by upsertCompanyFacts, so it
+  // invalidates for itself. (A quarantined fact returns above without
+  // touching filing_facts, so it has nothing to invalidate.)
+  await responseCache.invalidate(cacheKeys.facts(cik));
 }
 
 /**
