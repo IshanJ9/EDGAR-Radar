@@ -4,8 +4,13 @@ import 'dotenv/config';
 import './bootstrap/validateApiEnv';
 import { app } from './app';
 import { createLogger } from './logger';
+import { initResponseCache } from './cache';
 
 const logger = createLogger('api');
+
+// Phase 7 step 3 - a no-op unless CACHE_REDIS_URL is set. See src/cache.ts
+// for why this is an explicit call rather than an import-time connection.
+initResponseCache();
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 app.listen(PORT, () => {

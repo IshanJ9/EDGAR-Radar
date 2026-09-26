@@ -141,3 +141,28 @@ describe('READ_DATABASE_URL (optional)', () => {
     expect(() => optionalEnv('READ_DATABASE_URL', { READ_DATABASE_URL: 'replica:5432' })).not.toThrow('replica:5432');
   });
 });
+
+// Phase 7, step 3: CACHE_REDIS_URL is optional - unset means "no response
+// cache" - and only the two services that use the cache check it.
+describe('CACHE_REDIS_URL (optional)', () => {
+  const CACHE_USERS: ServiceName[] = ['api', 'parser-worker'];
+
+  test.each(CACHE_USERS)('%s starts without a cache', (service) => {
+    expect(findEnvProblems(service, VALID)).toEqual([]);
+    expect(findEnvProblems(service, { ...VALID, CACHE_REDIS_URL: '' })).toEqual([]);
+  });
+
+  test.each(CACHE_USERS)('%s accepts a well-formed cache URL', (service) => {
+    expect(findEnvProblems(service, { ...VALID, CACHE_REDIS_URL: 'redis://redis-cache:6379' })).toEqual([]);
+  });
+
+  test.each(CACHE_USERS)('%s refuses a malformed cache URL', (service) => {
+    expect(findEnvProblems(service, { ...VALID, CACHE_REDIS_URL: 'redis-cache:6379' })).toEqual([
+      { name: 'CACHE_REDIS_URL', problem: expect.stringContaining('must be a redis://') },
+    ]);
+  });
+
+  test.each(['scoring-worker', 'notification-worker'] as ServiceName[])('%s ignores it - it neither reads nor writes cached data', (service) => {
+    expect(findEnvProblems(service, { ...VALID, CACHE_REDIS_URL: 'garbage' })).toEqual([]);
+  });
+});

@@ -34,10 +34,11 @@ export type RequiredEnvVar = 'DATABASE_URL' | 'REDIS_URL' | 'EDGAR_CONTACT_EMAIL
  * exactly why it is checked here: otherwise a typo would silently disable the
  * replica, visible only as a warning on every request.
  */
-export type OptionalEnvVar = 'READ_DATABASE_URL';
+export type OptionalEnvVar = 'READ_DATABASE_URL' | 'CACHE_REDIS_URL';
 export type EnvVar = RequiredEnvVar | OptionalEnvVar;
 export type ServiceName = 'api' | 'parser-worker' | 'scoring-worker' | 'notification-worker';
 
+const REDIS_URL_FORMAT = z.string().regex(/^rediss?:\/\/\S+$/, 'must be a redis:// or rediss:// URL');
 const POSTGRES_URL = z.string().regex(/^postgres(ql)?:\/\/\S+$/, 'must be a postgres:// or postgresql:// connection URL');
 
 /**
@@ -49,7 +50,8 @@ const POSTGRES_URL = z.string().regex(/^postgres(ql)?:\/\/\S+$/, 'must be a post
 const FORMATS: Record<EnvVar, z.ZodType<string>> = {
   DATABASE_URL: POSTGRES_URL,
   READ_DATABASE_URL: POSTGRES_URL,
-  REDIS_URL: z.string().regex(/^rediss?:\/\/\S+$/, 'must be a redis:// or rediss:// URL'),
+  REDIS_URL: REDIS_URL_FORMAT,
+  CACHE_REDIS_URL: REDIS_URL_FORMAT,
   EDGAR_CONTACT_EMAIL: z.email('must be a valid email address - SEC requires a real contact email on every request'),
   JWT_SECRET: z.string(),
 };
@@ -72,10 +74,15 @@ export const REQUIRED_ENV: Record<ServiceName, readonly RequiredEnvVar[]> = {
   'notification-worker': ['DATABASE_URL', 'REDIS_URL', 'EDGAR_CONTACT_EMAIL'],
 };
 
-/** Only the API reads from the replica - see docker-compose.yml. */
+/**
+ * Only the API reads from the replica. The response cache (CACHE_REDIS_URL,
+ * Phase 7 step 3) is used by the API, which fills it, and by the parser
+ * worker, which writes new filings' facts and so must invalidate it. See
+ * docker-compose.yml.
+ */
 export const OPTIONAL_ENV: Record<ServiceName, readonly OptionalEnvVar[]> = {
-  api: ['READ_DATABASE_URL'],
-  'parser-worker': [],
+  api: ['READ_DATABASE_URL', 'CACHE_REDIS_URL'],
+  'parser-worker': ['CACHE_REDIS_URL'],
   'scoring-worker': [],
   'notification-worker': [],
 };

@@ -137,6 +137,28 @@ services:
       timeout: 5s
       retries: 10
 
+  # Phase 7, step 3: the response cache for the API's hot read endpoints (see
+  # src/cache.ts). A separate server from `redis` above on purpose: a cache
+  # must evict when full (allkeys-lru drops the least recently used entries),
+  # while the queue Redis must never evict (`noeviction`, above). One Redis has
+  # one policy, so they cannot share a server.
+  # - maxmemory 64mb: a hard ceiling on this box's memory. At today's scale the
+  #   whole working set is a few MB, so nothing is evicted in practice.
+  # - no persistence (`--save ""`, no AOF): a cache is rebuilt from Postgres on
+  #   demand, so writing it to disk would only cost I/O. A restart empties it,
+  #   which is correct.
+  # Nothing depends on it and it has no published port, for the same reasons
+  # as `postgres-replica`: the API treats an unreachable cache as a miss.
+  redis-cache:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   migrate:
     build:
       context: .
@@ -166,6 +188,8 @@ services:
       # read back what they just wrote, so they stay on the primary.
       READ_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres-replica:5432/${POSTGRES_DB:-edgar_radar}
       REDIS_URL: redis://redis:6379
+      # Phase 7, step 3: the response cache (`redis-cache`), not the queue Redis.
+      CACHE_REDIS_URL: redis://redis-cache:6379
       EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
       JWT_SECRET: ${JWT_SECRET}
       # Off unless explicitly enabled - see .env.example and src/app.ts. The
@@ -190,6 +214,9 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
       REDIS_URL: redis://redis:6379
+      # Phase 7, step 3: this worker writes new filings' facts, so it
+      # invalidates the API's cached responses for them.
+      CACHE_REDIS_URL: redis://redis-cache:6379
       EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
     depends_on:
       postgres:
