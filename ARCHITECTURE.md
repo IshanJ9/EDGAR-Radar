@@ -195,9 +195,9 @@ toward the full SEC filer list (on the order of 10,000 companies).
 
 | Pressure | Component | Why this, specifically |
 |---|---|---|
-| Repeated reads of slow-changing data | **Redis response cache** for `/companies/:cik`, `/:cik/facts` and `/:cik/risk-factor-diff`, keyed by CIK, **invalidated when that CIK's `filing.parsed` job completes** | Facts only change when a filing arrives, so event-driven invalidation gives a high hit rate without stale data. This is Phase 7 step 3. |
+| Repeated reads of slow-changing data | **Redis response cache** for `/companies/:cik`, `/:cik/facts` and `/:cik/risk-factor-diff`, keyed by CIK, **invalidated by every write to the tables behind them** | Facts only change when data is written, so write-driven invalidation gives a high hit rate without stale data. **Built in Phase 7 step 3** — invalidated at the three repository write functions rather than on `filing.parsed` as first planned here, because that event would have missed reconciliation's corrections. |
 | Cache and queue have opposite memory policies | **A second Redis instance for the cache** (`allkeys-lru`), separate from the queue Redis (`noeviction`) | A cache must evict under pressure; BullMQ must never. One instance cannot do both safely. |
-| Read load competing with ingestion writes | **Postgres streaming read replica**; read-only endpoints use a second pool pointed at it, writes and job processing stay on the primary | Isolates user reads from the parser's upserts. This is Phase 7 step 2 — where the zero-cost constraint must be revisited, since a managed Azure replica is not free. |
+| Read load competing with ingestion writes | **Postgres streaming read replica**; read-only endpoints use a second pool pointed at it, writes and job processing stay on the primary | Isolates user reads from the parser's upserts. **Built in Phase 7 step 2** — as a container on the same VM, since a managed Azure replica is not free and Oracle's free ARM allowance is fully used, so it adds no capacity there (measured below). |
 | Connections multiply with replicas | **PgBouncer** in transaction pooling mode in front of both Postgres nodes | Several API replicas × 10 connections each would approach `max_connections`. |
 | API availability and peaks | **2+ stateless API replicas** behind a **reverse proxy / load balancer** (e.g. nginx or a cloud load balancer) with health checks | JWT auth is stateless, so replicas need no shared session store. |
 | Per-user notifications | **Fan-out worker**: `scores.updated` → one `notify.user` job per watcher, keyed on `(accession_number, user_id)` for idempotency, delivered through a **transactional email provider** respecting its send-rate limit | Replaces the shared Slack message (bottleneck 4); ~2,000 deliveries for a popular filing is a queue of small jobs, not one blocking loop. |
@@ -205,9 +205,52 @@ toward the full SEC filer list (on the order of 10,000 companies).
 | Ingestion near the SEC ceiling | **Change detection from SEC's daily and real-time filing indexes** instead of polling every company's `submissions` feed | A handful of index requests replaces ~10,000 per-company requests per cycle. |
 | Operability | **Metrics**: queue depth and age, SEC 403/429 counts, cache hit ratio, replica lag; alerts on each | At this size failures are silent unless measured (compare the Phase 3 poller outage). |
 
-The load test that closes Phase 7 (`autocannon`, before and after) targets
-this stage: the cache and replica should be shown to change measured latency
-and throughput, not assumed to.
+### Measured: two Stage 2 components, built and load-tested
+
+Phase 7 steps 2–4 built the read replica and the response cache and measured
+them with `autocannon` 8.0.0 on the production VM (Oracle A1, 2 ARM OCPUs,
+12 GB) on 2026-09-26, against its real databases: `GET
+/companies/0000320193/facts` (Apple, 36 facts, a 9,455-byte body), 30-second
+runs after a discarded 10-second warm-up. Reproducible with
+`scripts/load-test.sh`.
+
+| Configuration | Connections | Requests/s | p50 | p97.5 | p99 | Errors |
+|---|---|---|---|---|---|---|
+| Primary only | 10 | 1,419 | 6 ms | 11 ms | 14 ms | 0 |
+| Primary only | 50 | 1,499 | 32 ms | 47 ms | 56 ms | 0 |
+| Read replica | 10 | 1,429 | 6 ms | 11 ms | 13 ms | 0 |
+| Read replica | 50 | 1,486 | 32 ms | 45 ms | 56 ms | 0 |
+| Replica + cache | 10 | 4,031 | 2 ms | 3 ms | 4 ms | 0 |
+| Replica + cache | 50 | 4,165 | 11 ms | 16 ms | 20 ms | 0 |
+
+What the numbers say:
+
+- **The replica changed nothing measurable here** (within ±1%), which is what
+  the same-host setup predicted. It moved the database work — CPU at mid-run
+  went from primary 73% / replica 0% to primary 2% / replica 75% — but both
+  share the same two cores. Its benefit needs a host of its own.
+- **The cache gave 2.8× the throughput at 50 connections** (1,499 → 4,165
+  req/s), p50 32 → 11 ms and p99 56 → 20 ms, with both databases at ~0% CPU.
+- **The bottleneck moved to the API process itself:** with the cache, the
+  API container sat at ~100% CPU — one full core, Node's single thread. The
+  next component for more throughput is therefore more API processes (the "2+
+  stateless API replicas" row above), not anything in the data tier.
+- **Saturated already at 10 connections:** throughput barely rises from 10
+  to 50, and latency rises instead, as Little's law predicts — 50 in flight
+  ÷ 1,499 req/s ≈ 33 ms against a measured p50 of 32 ms; 50 ÷ 4,165 ≈ 12 ms
+  against 11 ms.
+- **Against this stage's own assumptions, reads were never the constraint:**
+  §5 derives ~12 req/s at peak; even the primary-only path served ~1,500.
+  At the assumed 10,000 users the cache buys latency and database headroom,
+  not survival — the Stage 2 pressures that bind are ingestion near the SEC
+  ceiling and notification fan-out.
+
+Limits of these numbers: the cache runs were a best case — one hot key, a
+100% hit rate — while real traffic spreads across companies; the query is
+cheap at this data size; `autocannon` shared the VM's two cores with the API
+and databases (15–31% CPU), so absolute figures are a floor; one endpoint;
+one 30-second run per cell. An independent 4-second dry run shortly before
+showed the same shape (1,266 / 1,220 / 3,259 req/s at 10 connections).
 
 ---
 
@@ -249,14 +292,14 @@ SEC universe.
   rate and fan-out figure in §§4–6 is an **assumption** stated so it can be
   replaced with real traffic data; the component choices should be revisited
   once real numbers exist.
-- No stage here has been implemented or load-tested yet. Phase 7's remaining
-  steps implement **one** of them — a Postgres read replica and a Redis
-  response cache (Stage 2) — and measure it with `autocannon` before and
-  after, which is what turns part of this narrative into evidence.
+- Two Stage 2 components — the Postgres read replica and the Redis response
+  cache — have been implemented and load-tested (§5, "Measured"). Everything
+  else in §§4–6 is still design, not evidence.
 - **Cost:** the project has a hard zero-cost constraint, and several Stage 2
   and 3 components (managed replicas, CDNs, managed Kafka, email providers)
   are not free. This document describes what the architecture would need; it
   does not assume those costs are acceptable. Each is a separate decision when
   it is actually built.
-- The bottlenecks in §3 are real today and are **not fixed by this step**,
-  which is documentation only.
+- The bottlenecks in §3 were real when this was written (2026-09-16) and
+  the documentation step fixed none of them. The replica and cache address
+  the read path only; the others remain open (see PROGRESS.md).
