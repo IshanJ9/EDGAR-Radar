@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { CompanyFactsNotFoundError } from '../sec';
-import { getCompanyByCik, getFactsByCik, upsertCompanyFacts } from '../repositories/companyRepository';
+import { pool, Queryable, readDb } from '../db';
+import { CompanyRecord, getCompanyByCik, getFactsByCik, upsertCompanyFacts } from '../repositories/companyRepository';
 import { getOrComputeRiskFactorDiff } from '../riskFactorDiffService';
 
 const router = Router();
@@ -9,15 +10,33 @@ function isValidCik(cik: string): boolean {
   return /^\d{1,10}$/.test(cik);
 }
 
-// Returns the company if we already have it stored; otherwise fetches it
-// from SEC and stores it first (get-or-fetch), so repeat requests are served
-// from Postgres instead of re-hitting the SEC API every time.
-async function getOrFetchCompany(cik: string) {
-  const existing = await getCompanyByCik(cik);
-  if (existing) return existing;
+/**
+ * Returns the company if we already have it stored; otherwise fetches it
+ * from SEC and stores it first (get-or-fetch), so repeat requests are served
+ * from Postgres instead of re-hitting the SEC API every time.
+ *
+ * Phase 7, step 2 - the read replica. The common case, a company we already
+ * hold, is answered by the replica. A replica miss is NOT taken to mean the
+ * company is absent: replication is asynchronous, so a company stored on the
+ * primary moments ago may not have arrived yet. Trusting that miss would
+ * re-fetch from SEC - spending the shared SEC rate budget - and upsert data we
+ * already have. So a miss is checked against the primary first.
+ *
+ * Also returns which database answered, so follow-up reads for the same
+ * request use the same one. A company just written to (or found only on) the
+ * primary must have its facts read from the primary too; the replica may hold
+ * the company row without its facts yet, which would return an empty list
+ * rather than an error.
+ */
+export async function getOrFetchCompany(cik: string): Promise<{ company: CompanyRecord | null; db: Queryable }> {
+  const fromReplica = await getCompanyByCik(cik, readDb);
+  if (fromReplica) return { company: fromReplica, db: readDb };
+
+  const fromPrimary = await getCompanyByCik(cik, pool);
+  if (fromPrimary) return { company: fromPrimary, db: pool };
 
   await upsertCompanyFacts(cik);
-  return getCompanyByCik(cik);
+  return { company: await getCompanyByCik(cik, pool), db: pool };
 }
 
 router.get('/:cik', async (req, res) => {
@@ -28,7 +47,7 @@ router.get('/:cik', async (req, res) => {
   }
 
   try {
-    const company = await getOrFetchCompany(cik);
+    const { company } = await getOrFetchCompany(cik);
     res.json(company);
   } catch (err) {
     if (err instanceof CompanyFactsNotFoundError) {
@@ -48,8 +67,8 @@ router.get('/:cik/facts', async (req, res) => {
   }
 
   try {
-    const company = await getOrFetchCompany(cik);
-    const facts = await getFactsByCik(cik);
+    const { company, db } = await getOrFetchCompany(cik);
+    const facts = await getFactsByCik(cik, db);
     res.json({ ...company, facts });
   } catch (err) {
     if (err instanceof CompanyFactsNotFoundError) {

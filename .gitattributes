@@ -1,0 +1,8 @@
+# Files that are bind-mounted into Linux containers must keep LF line endings
+# in every checkout. This repo is developed on Windows with core.autocrlf=true,
+# which would otherwise check these out as CRLF: `sh` then fails on the stray
+# \r ("/bin/sh^M: not found"-style errors), and Postgres would read the \r as
+# part of pg_hba.conf's last field. Linux checkouts (CI, the production VM)
+# were never affected; this makes the Windows working tree match them.
+*.sh      text eol=lf
+docker/** text eol=lf
