@@ -248,6 +248,22 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 
 ---
 
+## Post-Phase 7 — Production ingestion
+**Added 2026-09-26 at the user's request; not part of the original roadmap.** Phases 0–7 are complete, but the deployed system never discovers new filings: the poller, nightly reconciliation and heartbeat (Phase 3) were never deployed, because they resolve `data/company-universe.json` via `__dirname`, which breaks once compiled. Deploying them safely takes more than the path fix, so it is split into steps, done one at a time like every phase above.
+
+**Goal:** production finds, ingests and reconciles new filings on its own, without ever exceeding SEC's rate limit.
+
+**Build:**
+- [x] One SEC request budget shared across processes. Each process has its own token bucket at 7 req/s with a burst of 7, so the API and parser worker together could already exceed SEC's 10 req/s in theory, and adding the poller makes it three processes. Split a single budget between them so that no alignment of bursts can exceed 10 in any second.
+      **Done 2026-09-26.** `SEC_REQUESTS_PER_SECOND` sets each process's share (validated: >0 and ≤8), and every bucket's burst is now 1, so a process sends at most rate + 1 in any second. Compose shares: API 1, parser worker 2 (poller 2 and reconciliation 1 arrive in step 2: 6/s sustained, at most 10 in any second). `secBudget.test.ts` reads the real `docker-compose.yml` and fails if the shares could exceed 10 in a second or 8 sustained. Verified in the compiled image with `fetch` stubbed: 1/s → requests exactly 1,000 ms apart; 2/s → 501 ms apart. See PROGRESS.md.
+- [ ] Deploy the poller, reconciliation and heartbeat as Compose services: fix the path resolution; give reconciliation a writable volume for its 1.4 GB download; skip companies not yet stored (their facts would violate the foreign key and fail the whole run); run reconciliation only on its nightly schedule, not on every container start. Verify a real poll cycle end to end in production.
+- [ ] One-time backfill of the 196-company universe into production (about 196 SEC requests, inside the budget) — subject to the user's go-ahead at that point.
+- [ ] Heartbeat sends one alert per outage, not one every ~75 minutes; then stop the poller in production on purpose to test detection and recovery. This closes Phase 3's two failure cases that were never tested.
+
+**Done when:** a poll cycle runs in production every 30 minutes and its discovered filings are ingested by the parser worker; reconciliation completes nightly; the heartbeat detects a deliberately stopped poller and alerts exactly once; and the configured SEC budget provably cannot exceed 10 requests in any second.
+
+---
+
 ## Phase 8 — India Extension (later)
 Not started. Come back to this once Phase 6 (ideally Phase 7) is solid.
 Full detail in `docs/india-first-project-roadmap.md` — NSE/BSE ingestion

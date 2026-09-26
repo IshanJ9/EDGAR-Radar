@@ -19,6 +19,14 @@
 # OS update crashed the poller, and nothing brought it back for 3.5 days (see
 # PROGRESS.md). The one-shot `migrate` job stays `restart: "no"`.
 #
+# SEC request budget: SEC allows 10 requests per second from this host, and
+# several services call it. Each one that does sets SEC_REQUESTS_PER_SECOND,
+# its share of that budget, and src/sec.ts gives every process a burst of 1.
+# A process can then send at most (rate + 1) requests in any one-second
+# window, so the sum of (rate + 1) over these services must stay at or under
+# 10 - src/__tests__/secBudget.test.ts reads this file and fails if it does
+# not. Current shares: api 1, worker-parser 2.
+#
 # No top-level `version:` key - obsolete in current Compose (v5.3.1 here).
 
 services:
@@ -190,6 +198,10 @@ services:
       REDIS_URL: redis://redis:6379
       # Phase 7, step 3: the response cache (`redis-cache`), not the queue Redis.
       CACHE_REDIS_URL: redis://redis-cache:6379
+      # Its share of the SEC budget (see the top of this file). The API only
+      # calls SEC for a company it has never stored, or for a risk-factor
+      # diff's filing text, so 1 per second is plenty.
+      SEC_REQUESTS_PER_SECOND: "1"
       EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
       JWT_SECRET: ${JWT_SECRET}
       # Off unless explicitly enabled - see .env.example and src/app.ts. The
@@ -217,6 +229,8 @@ services:
       # Phase 7, step 3: this worker writes new filings' facts, so it
       # invalidates the API's cached responses for them.
       CACHE_REDIS_URL: redis://redis-cache:6379
+      # Its share of the SEC budget (see the top of this file).
+      SEC_REQUESTS_PER_SECOND: "2"
       EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
     depends_on:
       postgres:
