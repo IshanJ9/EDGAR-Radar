@@ -1,13 +1,29 @@
 import { TokenBucket } from './rateLimiter';
 import { fetchWithRetry } from './retry';
-import { requireEnv } from './config';
+import { optionalEnv, requireEnv } from './config';
 
 const CONTACT_EMAIL = requireEnv('EDGAR_CONTACT_EMAIL');
 const USER_AGENT = `EDGAR Radar (${CONTACT_EMAIL})`;
 
-// SEC's hard limit is 10 req/s; CLAUDE.md says stay at 5-8/s, so 7 targets
-// the middle of that range with a small burst allowance.
-const secRateLimiter = new TokenBucket(7, 7);
+/**
+ * SEC's rate limit is 10 requests per second for the whole host (CLAUDE.md:
+ * stay at 5-8), but this limiter only governs its own process - and several
+ * processes call SEC. So each process gets a share of one budget through
+ * SEC_REQUESTS_PER_SECOND, set per service in docker-compose.yml.
+ *
+ * A token bucket admits at most `capacity + rate` requests in any one-second
+ * window: a full bucket, plus a second of refill. Summed over every process,
+ * that is what has to stay at or under 10. Hence a burst capacity of 1 - the
+ * old `TokenBucket(7, 7)` allowed 14 in a second from a single process, so
+ * the API and parser worker together could in principle send 28.
+ * src/__tests__/secBudget.test.ts checks the sum against docker-compose.yml.
+ *
+ * 7 is only the default for a process run on its own (`npm run backfill` on
+ * a development machine), where nothing else shares the budget.
+ */
+export const SEC_BURST_CAPACITY = 1;
+export const SEC_REQUESTS_PER_SECOND = Number(optionalEnv('SEC_REQUESTS_PER_SECOND') ?? 7);
+const secRateLimiter = new TokenBucket(SEC_REQUESTS_PER_SECOND, SEC_BURST_CAPACITY);
 
 export interface UsGaapFact {
   start?: string;

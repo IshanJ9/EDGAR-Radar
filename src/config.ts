@@ -34,7 +34,7 @@ export type RequiredEnvVar = 'DATABASE_URL' | 'REDIS_URL' | 'EDGAR_CONTACT_EMAIL
  * exactly why it is checked here: otherwise a typo would silently disable the
  * replica, visible only as a warning on every request.
  */
-export type OptionalEnvVar = 'READ_DATABASE_URL' | 'CACHE_REDIS_URL';
+export type OptionalEnvVar = 'READ_DATABASE_URL' | 'CACHE_REDIS_URL' | 'SEC_REQUESTS_PER_SECOND';
 export type EnvVar = RequiredEnvVar | OptionalEnvVar;
 export type ServiceName = 'api' | 'parser-worker' | 'scoring-worker' | 'notification-worker';
 
@@ -52,6 +52,13 @@ const FORMATS: Record<EnvVar, z.ZodType<string>> = {
   READ_DATABASE_URL: POSTGRES_URL,
   REDIS_URL: REDIS_URL_FORMAT,
   CACHE_REDIS_URL: REDIS_URL_FORMAT,
+  // This process's share of SEC's 10 req/s (see src/sec.ts). Capped at 8,
+  // CLAUDE.md's upper bound, so no single process can be given the whole
+  // limit by mistake.
+  SEC_REQUESTS_PER_SECOND: z
+    .string()
+    .regex(/^\d+(\.\d+)?$/, 'must be a number of requests per second, e.g. 2')
+    .refine((v) => Number(v) > 0 && Number(v) <= 8, 'must be greater than 0 and at most 8 - SEC allows 10 per second across all processes'),
   EDGAR_CONTACT_EMAIL: z.email('must be a valid email address - SEC requires a real contact email on every request'),
   JWT_SECRET: z.string(),
 };
@@ -77,12 +84,14 @@ export const REQUIRED_ENV: Record<ServiceName, readonly RequiredEnvVar[]> = {
 /**
  * Only the API reads from the replica. The response cache (CACHE_REDIS_URL,
  * Phase 7 step 3) is used by the API, which fills it, and by the parser
- * worker, which writes new filings' facts and so must invalidate it. See
- * docker-compose.yml.
+ * worker, which writes new filings' facts and so must invalidate it.
+ * SEC_REQUESTS_PER_SECOND is checked for the two services that call SEC; the
+ * scoring and notification workers only reach src/sec.ts through imports.
+ * See docker-compose.yml.
  */
 export const OPTIONAL_ENV: Record<ServiceName, readonly OptionalEnvVar[]> = {
-  api: ['READ_DATABASE_URL', 'CACHE_REDIS_URL'],
-  'parser-worker': ['CACHE_REDIS_URL'],
+  api: ['READ_DATABASE_URL', 'CACHE_REDIS_URL', 'SEC_REQUESTS_PER_SECOND'],
+  'parser-worker': ['CACHE_REDIS_URL', 'SEC_REQUESTS_PER_SECOND'],
   'scoring-worker': [],
   'notification-worker': [],
 };

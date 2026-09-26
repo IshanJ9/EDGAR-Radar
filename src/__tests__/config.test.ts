@@ -166,3 +166,21 @@ describe('CACHE_REDIS_URL (optional)', () => {
     expect(findEnvProblems(service, { ...VALID, CACHE_REDIS_URL: 'garbage' })).toEqual([]);
   });
 });
+
+// Post-Phase 7, step 1: SEC_REQUESTS_PER_SECOND - a process's share of SEC's
+// 10 requests/second (src/sec.ts). Optional; checked for the two services
+// that call SEC.
+describe('SEC_REQUESTS_PER_SECOND (optional)', () => {
+  test.each(['1', '2', '2.5', '8'])('accepts %s', (value) => {
+    expect(findEnvProblems('api', { ...VALID, SEC_REQUESTS_PER_SECOND: value })).toEqual([]);
+    expect(findEnvProblems('parser-worker', { ...VALID, SEC_REQUESTS_PER_SECOND: value })).toEqual([]);
+  });
+
+  test.each(['0', '8.5', '10', '-1', 'two', '1e3'])('refuses %s', (value) => {
+    expect(findEnvProblems('api', { ...VALID, SEC_REQUESTS_PER_SECOND: value }).map((p) => p.name)).toEqual(['SEC_REQUESTS_PER_SECOND']);
+  });
+
+  test('unset is fine - a standalone process uses its default', () => {
+    expect(findEnvProblems('api', VALID)).toEqual([]);
+  });
+});
