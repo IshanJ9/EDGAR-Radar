@@ -37,8 +37,26 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-edgar_radar}
+    # Phase 7, step 2 - two changes so `postgres-replica` can stream from this
+    # server. The image's defaults already enable replication (wal_level =
+    # replica, 10 WAL senders), checked against a throwaway container.
+    # - hba_file: the stock rules plus one line admitting replication
+    #   connections; see docker/postgres/pg_hba.conf.
+    # - max_slot_wal_keep_size: a replication slot makes the primary keep WAL
+    #   until the replica has received it, and the default (-1) keeps it
+    #   without limit - so a replica that stayed down would eventually fill
+    #   this disk and take the primary with it. Capped at 1GB, the slot is
+    #   invalidated instead and only the replica needs rebuilding (delete its
+    #   volume; see docker/postgres/replica-entrypoint.sh).
+    command:
+      - postgres
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
+      - -c
+      - max_slot_wal_keep_size=1GB
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-edgar_radar}"]
       interval: 5s
@@ -48,6 +66,59 @@ services:
       # Exposed to the host so `psql`/a GUI client can inspect the data
       # directly during development - not required by any composed service.
       - "5432:5432"
+
+  # Phase 7, step 2: a streaming-replication hot standby of `postgres`, used by
+  # the API for read-heavy endpoints (READ_DATABASE_URL below; routing in
+  # src/db.ts and src/routes/companies.ts).
+  #
+  # On the same host as the primary by design: the only free compute left on
+  # this project's Oracle Always Free allowance is a 1/8-OCPU, 1 GB Micro VM.
+  # So this adds no read capacity - both servers share the same CPUs - and it
+  # exists to build and measure the replication and routing mechanics. Moving
+  # it to its own host later changes only the connection strings. See
+  # PROGRESS.md.
+  #
+  # Deliberately optional to the rest of the stack: nothing lists it in
+  # depends_on, and the API falls back to the primary for any read the replica
+  # cannot serve. A broken replica should cost read offloading, not uptime.
+  #
+  # No `ports:` on purpose. The base file publishes the primary on all
+  # interfaces for local development, and production has to override that
+  # (its docker-compose.override.yml binds it to 127.0.0.1). A second
+  # published database would need the same override, and forgetting it would
+  # put a database on the public internet. Inspect it with
+  # `docker compose exec postgres-replica psql -U postgres` instead.
+  postgres-replica:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    # Run with `sh` rather than executing the file, so it does not depend on
+    # the execute bit surviving a Windows checkout.
+    entrypoint: ["sh", "/docker/replica-entrypoint.sh"]
+    environment:
+      PRIMARY_HOST: postgres
+      # Replicates as the same superuser the app already connects with, so
+      # this grants nothing the stack does not already hold. A dedicated role
+      # with only REPLICATION is the stricter choice once the replica runs on
+      # a host of its own.
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-edgar_radar}
+    volumes:
+      - pgdata-replica:/var/lib/postgresql/data
+      - ./docker/postgres/replica-entrypoint.sh:/docker/replica-entrypoint.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Healthy means accepting connections and actually in standby mode - a
+      # replica that had been promoted, or cloned wrongly, would pass
+      # pg_isready alone.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-edgar_radar} && [ \"$$(psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-edgar_radar} -tAc 'select pg_is_in_recovery()')\" = t ]"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      # The first start clones the whole database before it can answer.
+      start_period: 120s
 
   redis:
     image: redis:7-alpine
@@ -90,6 +161,10 @@ services:
     environment:
       PORT: ${PORT:-3000}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-edgar_radar}
+      # Phase 7, step 2: read-heavy endpoints try this first and fall back to
+      # DATABASE_URL (src/db.ts). Only the API gets it - the workers write, and
+      # read back what they just wrote, so they stay on the primary.
+      READ_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres-replica:5432/${POSTGRES_DB:-edgar_radar}
       REDIS_URL: redis://redis:6379
       EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
       JWT_SECRET: ${JWT_SECRET}
@@ -166,3 +241,4 @@ services:
 
 volumes:
   pgdata:
+  pgdata-replica:

@@ -1,4 +1,4 @@
-import { pool } from '../db';
+import { pool, Queryable } from '../db';
 import {
   fetchCompanyFacts,
   mostRecentFact,
@@ -140,8 +140,8 @@ export interface CompanyRecord {
   entityName: string;
 }
 
-export async function getCompanyByCik(cik: string): Promise<CompanyRecord | null> {
-  const result = await pool.query('SELECT cik, entity_name FROM companies WHERE cik = $1', [padCik(cik)]);
+export async function getCompanyByCik(cik: string, db: Queryable = pool): Promise<CompanyRecord | null> {
+  const result = await db.query('SELECT cik, entity_name FROM companies WHERE cik = $1', [padCik(cik)]);
   if (result.rows.length === 0) return null;
   return { cik: result.rows[0].cik, entityName: result.rows[0].entity_name };
 }
@@ -166,8 +166,8 @@ export interface FactRecord {
  * restatement), so this picks the latest one per (tag, period) rather than
  * returning every historical version to API consumers.
  */
-export async function getFactsByCik(cik: string): Promise<FactRecord[]> {
-  const result = await pool.query(
+export async function getFactsByCik(cik: string, db: Queryable = pool): Promise<FactRecord[]> {
+  const result = await db.query<FactRecord>(
     `SELECT DISTINCT ON (tag, unit, period_end, period_start)
             tag, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date, effective_from
      FROM filing_facts

@@ -1,3 +1,4 @@
+import { pool, readDb } from './db';
 import { padCik, SubmissionsNotFoundError } from './sec';
 import { diffRiskFactorFilings } from './riskFactorDiff';
 import { ingestRecentFilingsText, getRecentFilingTexts, NoFilingFoundError } from './repositories/filingTextRepository';
@@ -16,7 +17,11 @@ import { getLatestRiskFactorDiff, upsertRiskFactorDiff, StoredRiskFactorDiff } f
 export async function getOrComputeRiskFactorDiff(cik: string): Promise<StoredRiskFactorDiff | null> {
   const paddedCik = padCik(cik);
 
-  const cached = await getLatestRiskFactorDiff(paddedCik);
+  // Replica first (Phase 7, step 2). A replica miss may only be replication
+  // lag, and recomputing is the most expensive thing the API does - it embeds
+  // every chunk of two 10-Ks - so the primary is checked before recomputing,
+  // for the same reason getOrFetchCompany does before re-fetching from SEC.
+  const cached = (await getLatestRiskFactorDiff(paddedCik, readDb)) ?? (await getLatestRiskFactorDiff(paddedCik, pool));
   if (cached) return cached;
 
   try {

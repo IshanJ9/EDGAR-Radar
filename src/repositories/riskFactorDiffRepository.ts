@@ -1,4 +1,4 @@
-import { pool } from '../db';
+import { pool, Queryable } from '../db';
 import { padCik } from '../sec';
 import { RiskFactorDiffResult } from '../riskFactorDiff';
 
@@ -32,8 +32,8 @@ export async function upsertRiskFactorDiff(
 }
 
 /** Returns the most recently computed diff for a company (by current_filing_date), or null if none exists yet. */
-export async function getLatestRiskFactorDiff(cik: string): Promise<StoredRiskFactorDiff | null> {
-  const result = await pool.query(
+export async function getLatestRiskFactorDiff(cik: string, db: Queryable = pool): Promise<StoredRiskFactorDiff | null> {
+  const result = await db.query(
     `SELECT cik, current_accn, current_filing_date, prior_accn, prior_filing_date, summary, chunks, computed_at
      FROM filing_risk_factor_diffs
      WHERE cik = $1

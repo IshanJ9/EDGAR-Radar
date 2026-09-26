@@ -12,7 +12,7 @@
 import { readFileSync } from 'fs';
 import * as path from 'path';
 import { parse } from 'dotenv';
-import { findEnvProblems, formatEnvProblems, requireEnv, REQUIRED_ENV, ServiceName } from '../config';
+import { findEnvProblems, formatEnvProblems, optionalEnv, requireEnv, REQUIRED_ENV, ServiceName } from '../config';
 
 const SERVICES = Object.keys(REQUIRED_ENV) as ServiceName[];
 const WORKERS: ServiceName[] = ['parser-worker', 'scoring-worker', 'notification-worker'];
@@ -83,7 +83,7 @@ describe('formatEnvProblems', () => {
     const env = { ...VALID, JWT_SECRET: '', REDIS_URL: 'localhost:6379' };
     const message = formatEnvProblems('api', findEnvProblems('api', env));
     expect(message).toContain('[api]');
-    expect(message).toContain('2 required environment variable(s)');
+    expect(message).toContain('2 environment variable(s)');
     expect(message).toContain('JWT_SECRET is not set');
     expect(message).toContain('REDIS_URL must be a redis://');
     expect(message).not.toContain('localhost:6379');
@@ -102,5 +102,42 @@ describe('requireEnv', () => {
   test('throws when the value is malformed, without including the value', () => {
     expect(() => requireEnv('REDIS_URL', { REDIS_URL: 'localhost:6379' })).toThrow('REDIS_URL must be a redis://');
     expect(() => requireEnv('REDIS_URL', { REDIS_URL: 'localhost:6379' })).not.toThrow('localhost:6379');
+  });
+});
+
+// Phase 7, step 2: READ_DATABASE_URL is optional - unset means "no replica,
+// read from the primary" - but a malformed value is refused at startup rather
+// than silently disabling the replica (see src/config.ts).
+describe('READ_DATABASE_URL (optional)', () => {
+  test.each([undefined, '', '   '])('the API starts without a replica (value %j)', (value) => {
+    const env = value === undefined ? VALID : { ...VALID, READ_DATABASE_URL: value };
+    expect(findEnvProblems('api', env)).toEqual([]);
+  });
+
+  test('the API accepts a well-formed replica URL', () => {
+    const env = { ...VALID, READ_DATABASE_URL: 'postgresql://postgres:postgres@postgres-replica:5432/edgar_radar' };
+    expect(findEnvProblems('api', env)).toEqual([]);
+  });
+
+  test('the API refuses a malformed replica URL, without echoing it', () => {
+    const env = { ...VALID, READ_DATABASE_URL: 'postgres-replica:5432' };
+    const problems = findEnvProblems('api', env);
+    expect(problems).toEqual([{ name: 'READ_DATABASE_URL', problem: expect.stringContaining('must be a postgres://') }]);
+    expect(formatEnvProblems('api', problems)).not.toContain('postgres-replica:5432');
+  });
+
+  test.each(WORKERS)('%s ignores it - only the API reads from the replica', (service) => {
+    expect(findEnvProblems(service, { ...VALID, READ_DATABASE_URL: 'garbage' })).toEqual([]);
+  });
+
+  test('optionalEnv returns undefined when unset or blank, and the value when well-formed', () => {
+    expect(optionalEnv('READ_DATABASE_URL', {})).toBeUndefined();
+    expect(optionalEnv('READ_DATABASE_URL', { READ_DATABASE_URL: ' ' })).toBeUndefined();
+    expect(optionalEnv('READ_DATABASE_URL', { READ_DATABASE_URL: 'postgres://r:5432/db' })).toBe('postgres://r:5432/db');
+  });
+
+  test('optionalEnv throws on a malformed value, naming the variable but not the value', () => {
+    expect(() => optionalEnv('READ_DATABASE_URL', { READ_DATABASE_URL: 'replica:5432' })).toThrow('READ_DATABASE_URL must be a postgres://');
+    expect(() => optionalEnv('READ_DATABASE_URL', { READ_DATABASE_URL: 'replica:5432' })).not.toThrow('replica:5432');
   });
 });
