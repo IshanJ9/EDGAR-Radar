@@ -15,7 +15,7 @@ import { findEnvProblems } from '../config';
 import { SEC_BURST_CAPACITY } from '../sec';
 
 /** Every service in docker-compose.yml whose code can call SEC. */
-const SEC_CALLERS = ['api', 'worker-parser'];
+const SEC_CALLERS = ['api', 'worker-parser', 'poller', 'reconcile'];
 
 /** Service name -> its SEC_REQUESTS_PER_SECOND value, if it sets one. */
 function secSharesFromCompose(): Map<string, string | undefined> {

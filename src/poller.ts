@@ -1,20 +1,10 @@
-import { readFileSync } from 'fs';
-import path from 'path';
 import { fetchSubmissions } from './sec';
 import { isQuarantined, recordFailure } from './repositories/failingCompanyRepository';
 import { getLastCheckedAt, setLastCheckedAt, startPollerRun, completePollerRun, failPollerRun } from './repositories/pollerRepository';
 import { filingDiscoveredQueue } from './queues';
+import { loadUniverse, UniverseEntry } from './universe';
 
-export interface UniverseEntry {
-  cik: string;
-  ticker: string;
-  name: string;
-}
-
-function loadUniverse(): UniverseEntry[] {
-  const universePath = path.join(__dirname, '..', 'data', 'company-universe.json');
-  return JSON.parse(readFileSync(universePath, 'utf-8'));
-}
+export type { UniverseEntry } from './universe';
 
 /**
  * Checks every company in the universe for filings newer than the last
