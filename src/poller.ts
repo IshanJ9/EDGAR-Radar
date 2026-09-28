@@ -1,14 +1,35 @@
 import { fetchSubmissions } from './sec';
 import { isQuarantined, recordFailure } from './repositories/failingCompanyRepository';
-import { getLastCheckedAt, setLastCheckedAt, startPollerRun, completePollerRun, failPollerRun } from './repositories/pollerRepository';
+import {
+  getLastCheckedAt,
+  setLastCheckedAt,
+  startPollerRun,
+  completePollerRun,
+  failPollerRun,
+  findDiscoveredAccessions,
+  recordDiscoveredFiling,
+} from './repositories/pollerRepository';
 import { filingDiscoveredQueue } from './queues';
 import { loadUniverse, UniverseEntry } from './universe';
 
 export type { UniverseEntry } from './universe';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
- * Checks every company in the universe for filings newer than the last
- * successful poll's cursor. Any filing newer than the cursor gets enqueued
+ * How many days before the cursor a filing's date may be and still count as
+ * a candidate. SEC dates a filing in New York time while the cursor is UTC,
+ * and a filing can reach SEC's submissions list some time after it was
+ * accepted, so a filing can legitimately carry a date a day or more before
+ * the cursor. `discovered_filings` stops the overlap from enqueueing
+ * anything twice.
+ */
+export const FILING_LOOKBACK_DAYS = 2;
+
+/**
+ * Checks every company in the universe for filings it has not enqueued
+ * before, dated no earlier than FILING_LOOKBACK_DAYS before the last
+ * successful poll's cursor. Each one gets enqueued exactly once
  * as a `filing.discovered` job (one per filing) rather than processed
  * inline - as of Phase 4 that actual ingestion work (Phase 2's fact
  * upsert + full-text re-ingest) moves to a separate Parser Worker
@@ -22,6 +43,7 @@ export type { UniverseEntry } from './universe';
 export async function runPollCycle(universeOverride?: UniverseEntry[]): Promise<{ companiesChecked: number; newFilingsFound: number }> {
   const universe = universeOverride ?? loadUniverse();
   const since = await getLastCheckedAt();
+  const earliestFilingDate = new Date(since.getTime() - FILING_LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10);
   const cycleStartedAt = new Date();
 
   const runId = await startPollerRun();
@@ -55,11 +77,18 @@ export async function runPollCycle(universeOverride?: UniverseEntry[]): Promise<
         continue;
       }
 
+      // SEC's filingDate has no time, so it can't be compared with the cursor
+      // directly: a filing made at 14:10 is dated midnight and would look
+      // older than a 14:00 cursor. Instead, every filing dated within the
+      // lookback window is a candidate, and the ones already enqueued are
+      // dropped by accession number.
       const { recent } = submissions.filings;
-      const newIndexes = recent.filingDate
+      const candidateIndexes = recent.filingDate
         .map((date, idx) => ({ date, idx }))
-        .filter(({ date }) => new Date(date) > since)
+        .filter(({ date }) => date >= earliestFilingDate)
         .map(({ idx }) => idx);
+      const alreadyDiscovered = await findDiscoveredAccessions(candidateIndexes.map((idx) => recent.accessionNumber[idx]!));
+      const newIndexes = candidateIndexes.filter((idx) => !alreadyDiscovered.has(recent.accessionNumber[idx]!));
 
       if (newIndexes.length === 0) continue;
 
@@ -67,14 +96,22 @@ export async function runPollCycle(universeOverride?: UniverseEntry[]): Promise<
       console.log(`  New filing(s) for ${company.ticker} (${company.cik}): ${newIndexes.map((i) => recent.form[i]).join(', ')}`);
 
       for (const idx of newIndexes) {
-        await filingDiscoveredQueue.add('filing-discovered', {
+        const filing = {
           cik: company.cik,
-          ticker: company.ticker,
           accessionNumber: recent.accessionNumber[idx]!,
           form: recent.form[idx]!,
           filingDate: recent.filingDate[idx]!,
+        };
+        await filingDiscoveredQueue.add('filing-discovered', {
+          ...filing,
+          ticker: company.ticker,
           primaryDocument: recent.primaryDocument[idx]!,
         });
+        // Recorded only once it is safely on the queue: if the enqueue
+        // throws, the next cycle still sees this filing as new. A crash
+        // between the two lines enqueues it twice, which the parser worker
+        // handles - its writes are upserts.
+        await recordDiscoveredFiling(filing);
       }
     }
 
