@@ -27,6 +27,30 @@ export async function setLastCheckedAt(timestamp: Date): Promise<void> {
   );
 }
 
+/** Of the given accession numbers, the ones the poller has already enqueued. */
+export async function findDiscoveredAccessions(accessionNumbers: string[]): Promise<Set<string>> {
+  if (accessionNumbers.length === 0) return new Set();
+  const result = await pool.query<{ accession_number: string }>(
+    'SELECT accession_number FROM discovered_filings WHERE accession_number = ANY($1)',
+    [accessionNumbers],
+  );
+  return new Set(result.rows.map((row) => row.accession_number));
+}
+
+/** Records that a filing has been enqueued. Recording one twice is harmless. */
+export async function recordDiscoveredFiling(filing: {
+  accessionNumber: string;
+  cik: string;
+  form: string;
+  filingDate: string;
+}): Promise<void> {
+  await pool.query(
+    `INSERT INTO discovered_filings (accession_number, cik, form, filing_date) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (accession_number) DO NOTHING`,
+    [filing.accessionNumber, filing.cik, filing.form, filing.filingDate],
+  );
+}
+
 export async function startPollerRun(): Promise<number> {
   const result = await pool.query<{ id: number }>(`INSERT INTO poller_runs DEFAULT VALUES RETURNING id`);
   return result.rows[0]!.id;
