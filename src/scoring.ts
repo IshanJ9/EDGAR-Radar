@@ -16,6 +16,9 @@ import {
   SGA_TAGS,
   REVENUE_TAGS,
   NET_INCOME_TAGS,
+  COST_OF_REVENUE_TAGS,
+  SELLING_MARKETING_TAGS,
+  GENERAL_ADMIN_TAGS,
 } from './sec';
 import { getAnnualValues, AnnualValue } from './repositories/scoringRepository';
 
@@ -23,23 +26,123 @@ export type ScoreOutcome<TInputs> =
   | { status: 'ok'; value: number; classification: string; inputs: TInputs }
   | { status: 'insufficient-history'; reason: string };
 
+/** How many years of each figure to read: enough to find a year (or a consecutive pair) that every figure has. */
+const HISTORY_YEARS = 5;
+
 /**
- * Fetches 2 fiscal years for every tag concept a formula needs, in one
- * batch. `asOfFiscalYear` restricts to fiscal years at or before it - used
- * by Phase 5's back-testing step to compute a score using a specific
- * historical fiscal-year pair instead of whatever's most recent today.
+ * Fetches up to HISTORY_YEARS fiscal years of every concept a formula needs,
+ * in one batch, newest first. `asOfFiscalYear` restricts to fiscal years at or
+ * before it - used by Phase 5's back-testing step to compute a score for a
+ * specific historical year instead of whatever's most recent today.
  */
-async function fetchTwoYears(cik: string, concepts: Record<string, string[]>, asOfFiscalYear?: number): Promise<Record<string, AnnualValue[]>> {
+async function fetchSeries(cik: string, concepts: Record<string, string[]>, asOfFiscalYear?: number): Promise<Record<string, AnnualValue[]>> {
   const entries = await Promise.all(
-    Object.entries(concepts).map(async ([key, tags]) => [key, await getAnnualValues(cik, tags, 2, asOfFiscalYear)] as const),
+    Object.entries(concepts).map(async ([key, tags]) => [key, await getAnnualValues(cik, tags, HISTORY_YEARS, asOfFiscalYear)] as const),
   );
   return Object.fromEntries(entries);
 }
 
-function missingConcepts(values: Record<string, AnnualValue[]>, requiredYears: 1 | 2): string[] {
-  return Object.entries(values)
-    .filter(([, v]) => v.length < requiredYears)
+/** `combine(a, b)` for every fiscal year both series have, newest first. */
+function combineByYear(a: AnnualValue[], b: AnnualValue[], combine: (x: number, y: number) => number): AnnualValue[] {
+  const byYear = new Map(b.map((v) => [v.fiscalYear, v.value]));
+  return a.filter((v) => byYear.has(v.fiscalYear)).map((v) => ({ fiscalYear: v.fiscalYear, value: combine(v.value, byYear.get(v.fiscalYear)!) }));
+}
+
+/**
+ * Derives a concept the company doesn't report from two it does (post-Phase 7
+ * hardening, step 3, F1b-2) - only when the reported series is empty, never
+ * mixed with it - and records the derivation in `derived`.
+ */
+async function deriveIfMissing(
+  series: Record<string, AnnualValue[]>,
+  key: string,
+  derived: string[],
+  parts: () => Promise<[AnnualValue[], AnnualValue[]]>,
+  combine: (x: number, y: number) => number,
+): Promise<void> {
+  if ((series[key]?.length ?? 0) > 0) return;
+  const [a, b] = await parts();
+  const combined = combineByYear(a, b, combine);
+  if (combined.length > 0) {
+    series[key] = combined;
+    derived.push(key);
+  }
+}
+
+/** Gross profit = revenue - cost of revenue, for a company that reports cost of revenue but no GrossProfit. */
+async function deriveGrossProfit(cik: string, series: Record<string, AnnualValue[]>, derived: string[], asOfFiscalYear?: number): Promise<void> {
+  await deriveIfMissing(
+    series,
+    'grossProfit',
+    derived,
+    async () => [series.revenue!, await getAnnualValues(cik, COST_OF_REVENUE_TAGS, HISTORY_YEARS, asOfFiscalYear)],
+    (revenue, cost) => revenue - cost,
+  );
+}
+
+/**
+ * SG&A = selling and marketing + general and administrative, for a company
+ * that reports both but no combined figure. Only both: G&A alone would
+ * understate SG&A, so a company reporting just one stays unscored.
+ */
+async function deriveSga(cik: string, series: Record<string, AnnualValue[]>, derived: string[], asOfFiscalYear?: number): Promise<void> {
+  await deriveIfMissing(
+    series,
+    'sga',
+    derived,
+    async () => [
+      await getAnnualValues(cik, SELLING_MARKETING_TAGS, HISTORY_YEARS, asOfFiscalYear),
+      await getAnnualValues(cik, GENERAL_ADMIN_TAGS, HISTORY_YEARS, asOfFiscalYear),
+    ],
+    (sellingAndMarketing, generalAndAdmin) => sellingAndMarketing + generalAndAdmin,
+  );
+}
+
+type YearSelection =
+  | { ok: true; current: Record<string, AnnualValue>; prior: Record<string, AnnualValue> }
+  | { ok: false; reason: string };
+
+/**
+ * Picks the most recent fiscal year that EVERY concept has - and, when
+ * `needPrior`, the year immediately before it, also for every concept.
+ *
+ * Until post-Phase 7 hardening, step 3 (F1b-2) each concept's own latest
+ * year(s) were taken independently, so a company missing one figure for its
+ * newest year had that figure's older value paired with every other
+ * figure's newer one - a ratio across two different years, with no error.
+ */
+function selectYears(series: Record<string, AnnualValue[]>, needPrior: boolean): YearSelection {
+  const required = needPrior ? 2 : 1;
+  const missing = Object.entries(series)
+    .filter(([, v]) => v.length < required)
     .map(([k]) => k);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason: needPrior
+        ? `Need 2 fiscal years of data; missing for: ${missing.join(', ')}.`
+        : `Missing most-recent-fiscal-year data for: ${missing.join(', ')}.`,
+    };
+  }
+
+  const yearSets = Object.values(series).map((v) => new Set(v.map((x) => x.fiscalYear)));
+  const hasEverywhere = (fy: number) => yearSets.every((s) => s.has(fy));
+  const candidates = [...yearSets[0]!].filter((fy) => hasEverywhere(fy) && (!needPrior || hasEverywhere(fy - 1))).sort((a, b) => b - a);
+  const year = candidates[0];
+  if (year === undefined) {
+    const coverage = Object.entries(series)
+      .map(([k, v]) => `${k} ${v.map((x) => x.fiscalYear).join('/')}`)
+      .join('; ');
+    return {
+      ok: false,
+      reason: needPrior
+        ? `No two consecutive fiscal years are available for every figure (${coverage}).`
+        : `No single fiscal year is available for every figure (${coverage}).`,
+    };
+  }
+
+  const at = (fy: number) => Object.fromEntries(Object.entries(series).map(([k, v]) => [k, v.find((x) => x.fiscalYear === fy)!]));
+  return { ok: true, current: at(year), prior: needPrior ? at(year - 1) : {} };
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +172,7 @@ export interface AltmanZInputs {
 }
 
 export async function computeAltmanZDoublePrime(cik: string, asOfFiscalYear?: number): Promise<ScoreOutcome<AltmanZInputs>> {
-  const values = await fetchTwoYears(
+  const series = await fetchSeries(
     cik,
     {
       assets: ASSETS_TAGS,
@@ -87,31 +190,18 @@ export async function computeAltmanZDoublePrime(cik: string, asOfFiscalYear?: nu
   // confirmed for real against AbbVie, which reports Assets and
   // StockholdersEquity every year but never a consolidated Liabilities
   // figure. Derive it from the fundamental balance-sheet identity
-  // (Assets = Liabilities + Equity, which always holds by definition)
-  // rather than treating this as missing data, when both of those are
-  // available for the same fiscal year.
-  let liabilitiesDerived = false;
-  if ((values.liabilities?.length ?? 0) === 0 && (values.assets?.length ?? 0) > 0 && (values.equity?.length ?? 0) > 0) {
-    const [assetsForDerivation] = values.assets!;
-    const [equityForDerivation] = values.equity!;
-    if (assetsForDerivation!.fiscalYear === equityForDerivation!.fiscalYear) {
-      values.liabilities = [{ fiscalYear: assetsForDerivation!.fiscalYear, value: assetsForDerivation!.value - equityForDerivation!.value }];
-      liabilitiesDerived = true;
-    }
+  // (Assets = Liabilities + Equity, which always holds by definition),
+  // year by year, rather than treating this as missing data.
+  const derived: string[] = [];
+  await deriveIfMissing(series, 'liabilities', derived, async () => [series.assets!, series.equity!], (assets, equity) => assets - equity);
+  const liabilitiesDerived = derived.includes('liabilities');
+
+  const selection = selectYears(series, false);
+  if (!selection.ok) {
+    return { status: 'insufficient-history', reason: selection.reason };
   }
 
-  const missing = missingConcepts(values, 1);
-  if (missing.length > 0) {
-    return { status: 'insufficient-history', reason: `Missing most-recent-fiscal-year data for: ${missing.join(', ')}.` };
-  }
-
-  const [assets] = values.assets!;
-  const [liabilities] = values.liabilities!;
-  const [currentAssets] = values.currentAssets!;
-  const [currentLiabilities] = values.currentLiabilities!;
-  const [retainedEarnings] = values.retainedEarnings!;
-  const [ebit] = values.ebit!;
-  const [equity] = values.equity!;
+  const { assets, liabilities, currentAssets, currentLiabilities, retainedEarnings, ebit, equity } = selection.current;
 
   if (assets!.value === 0 || liabilities!.value === 0) {
     return { status: 'insufficient-history', reason: 'Total assets or total liabilities is zero - cannot compute ratios.' };
@@ -162,10 +252,12 @@ export interface PiotroskiInputs {
     improvingGrossMargin: boolean;
     improvingAssetTurnover: boolean;
   };
+  /** Concepts computed from others because the company doesn't report them, e.g. ["grossProfit"]. */
+  derived: string[];
 }
 
 export async function computePiotroskiFScore(cik: string, asOfFiscalYear?: number): Promise<ScoreOutcome<PiotroskiInputs>> {
-  const values = await fetchTwoYears(
+  const series = await fetchSeries(
     cik,
     {
       assets: ASSETS_TAGS,
@@ -181,20 +273,18 @@ export async function computePiotroskiFScore(cik: string, asOfFiscalYear?: numbe
     asOfFiscalYear,
   );
 
-  const missing = missingConcepts(values, 2);
-  if (missing.length > 0) {
-    return { status: 'insufficient-history', reason: `Need 2 fiscal years of data; missing for: ${missing.join(', ')}.` };
+  const derived: string[] = [];
+  await deriveGrossProfit(cik, series, derived, asOfFiscalYear);
+
+  const selection = selectYears(series, true);
+  if (!selection.ok) {
+    return { status: 'insufficient-history', reason: selection.reason };
   }
 
-  const [assetsT, assetsP] = values.assets!;
-  const [caT, caP] = values.currentAssets!;
-  const [clT, clP] = values.currentLiabilities!;
-  const [ltdT, ltdP] = values.longTermDebt!;
-  const [cfoT] = values.cfo!;
-  const [niT, niP] = values.netIncome!;
-  const [sharesT, sharesP] = values.shares!;
-  const [gpT, gpP] = values.grossProfit!;
-  const [revT, revP] = values.revenue!;
+  const { assets: assetsT, currentAssets: caT, currentLiabilities: clT, longTermDebt: ltdT, cfo: cfoT, netIncome: niT, shares: sharesT, grossProfit: gpT, revenue: revT } =
+    selection.current;
+  const { assets: assetsP, currentAssets: caP, currentLiabilities: clP, longTermDebt: ltdP, netIncome: niP, shares: sharesP, grossProfit: gpP, revenue: revP } =
+    selection.prior;
 
   if ([assetsT, assetsP, revT, revP].some((v) => v!.value === 0)) {
     return { status: 'insufficient-history', reason: 'Total assets or revenue is zero in one of the two fiscal years - cannot compute ratios.' };
@@ -230,7 +320,7 @@ export async function computePiotroskiFScore(cik: string, asOfFiscalYear?: numbe
     status: 'ok',
     value: score,
     classification,
-    inputs: { fiscalYearCurrent: assetsT!.fiscalYear, fiscalYearPrior: assetsP!.fiscalYear, signals },
+    inputs: { fiscalYearCurrent: assetsT!.fiscalYear, fiscalYearPrior: assetsP!.fiscalYear, signals, derived },
   };
 }
 
@@ -258,10 +348,12 @@ export interface BeneishInputs {
     tata: number;
     lvgi: number;
   };
+  /** Concepts computed from others because the company doesn't report them, e.g. ["grossProfit", "sga"]. */
+  derived: string[];
 }
 
 export async function computeBeneishMScore(cik: string, asOfFiscalYear?: number): Promise<ScoreOutcome<BeneishInputs>> {
-  const values = await fetchTwoYears(
+  const series = await fetchSeries(
     cik,
     {
       assets: ASSETS_TAGS,
@@ -280,23 +372,19 @@ export async function computeBeneishMScore(cik: string, asOfFiscalYear?: number)
     asOfFiscalYear,
   );
 
-  const missing = missingConcepts(values, 2);
-  if (missing.length > 0) {
-    return { status: 'insufficient-history', reason: `Need 2 fiscal years of data; missing for: ${missing.join(', ')}.` };
+  const derived: string[] = [];
+  await deriveGrossProfit(cik, series, derived, asOfFiscalYear);
+  await deriveSga(cik, series, derived, asOfFiscalYear);
+
+  const selection = selectYears(series, true);
+  if (!selection.ok) {
+    return { status: 'insufficient-history', reason: selection.reason };
   }
 
-  const [assetsT, assetsP] = values.assets!;
-  const [caT, caP] = values.currentAssets!;
-  const [clT, clP] = values.currentLiabilities!;
-  const [ltdT, ltdP] = values.longTermDebt!;
-  const [cfoT] = values.cfo!;
-  const [niT] = values.netIncome!;
-  const [revT, revP] = values.revenue!;
-  const [gpT, gpP] = values.grossProfit!;
-  const [recT, recP] = values.receivables!;
-  const [ppeT, ppeP] = values.ppe!;
-  const [depT, depP] = values.depreciation!;
-  const [sgaT, sgaP] = values.sga!;
+  const c = selection.current;
+  const p = selection.prior;
+  const [assetsT, caT, clT, ltdT, cfoT, niT, revT, gpT, recT, ppeT, depT, sgaT] = [c.assets, c.currentAssets, c.currentLiabilities, c.longTermDebt, c.cfo, c.netIncome, c.revenue, c.grossProfit, c.receivables, c.ppe, c.depreciation, c.sga];
+  const [assetsP, caP, clP, ltdP, revP, gpP, recP, ppeP, depP, sgaP] = [p.assets, p.currentAssets, p.currentLiabilities, p.longTermDebt, p.revenue, p.grossProfit, p.receivables, p.ppe, p.depreciation, p.sga];
 
   const denominatorsAreNonZero =
     revT!.value !== 0 &&
@@ -336,6 +424,7 @@ export async function computeBeneishMScore(cik: string, asOfFiscalYear?: number)
     inputs: {
       fiscalYearCurrent: assetsT!.fiscalYear,
       fiscalYearPrior: assetsP!.fiscalYear,
+      derived,
       indices: {
         dsri: Number(dsri.toFixed(4)),
         gmi: Number(gmi.toFixed(4)),

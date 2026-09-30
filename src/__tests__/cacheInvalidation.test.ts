@@ -79,6 +79,38 @@ describe('upsertCompanyFacts', () => {
     const companyWrite = query.mock.calls.findIndex(([sql]) => String(sql).includes('INSERT INTO companies'));
     expect(query.mock.invocationCallOrder[companyWrite]!).toBeLessThan(invalidate.mock.invocationCallOrder[0]!);
   });
+
+  // Post-Phase 7 hardening, step 3 (F1b-2): scoring derives gross profit and
+  // SG&A from these when a company reports no combined figure, so ingestion
+  // has to store them.
+  test('stores cost of revenue and both SG&A components, the parts scoring derives from', async () => {
+    const twoYears = (tag: string) => ({
+      [tag]: {
+        units: {
+          USD: [
+            { ...VALID_FACT, start: '2023-10-01', end: '2024-09-28', val: 100 },
+            { ...VALID_FACT, start: '2022-09-25', end: '2023-09-30', val: 90 },
+          ],
+        },
+      },
+    });
+    (fetchCompanyFacts as jest.Mock).mockResolvedValue({
+      cik: 320193,
+      entityName: 'Apple Inc.',
+      facts: {
+        'us-gaap': {
+          ...twoYears('CostOfGoodsAndServicesSold'),
+          ...twoYears('SellingAndMarketingExpense'),
+          ...twoYears('GeneralAndAdministrativeExpense'),
+        },
+      },
+    });
+
+    await upsertCompanyFacts('320193');
+
+    const storedTags = query.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO filing_facts')).map(([, params]) => params[1]);
+    expect(new Set(storedTags)).toEqual(new Set(['CostOfGoodsAndServicesSold', 'SellingAndMarketingExpense', 'GeneralAndAdministrativeExpense']));
+  });
 });
 
 describe('upsertRiskFactorDiff', () => {

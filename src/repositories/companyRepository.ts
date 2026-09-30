@@ -22,6 +22,9 @@ import {
   PPE_TAGS,
   DEPRECIATION_TAGS,
   SGA_TAGS,
+  COST_OF_REVENUE_TAGS,
+  SELLING_MARKETING_TAGS,
+  GENERAL_ADMIN_TAGS,
   UsGaapFact,
   fiscalYearOfPeriod,
 } from '../sec';
@@ -51,6 +54,11 @@ const ANNUAL_FACT_CONCEPTS: { tags: string[]; unit: 'USD' | 'shares' }[] = [
   { tags: PPE_TAGS, unit: 'USD' },
   { tags: DEPRECIATION_TAGS, unit: 'USD' },
   { tags: SGA_TAGS, unit: 'USD' },
+  // The parts scoring derives gross profit and SG&A from when a company
+  // reports no combined figure (post-Phase 7 hardening, step 3, F1b-2).
+  { tags: COST_OF_REVENUE_TAGS, unit: 'USD' },
+  { tags: SELLING_MARKETING_TAGS, unit: 'USD' },
+  { tags: GENERAL_ADMIN_TAGS, unit: 'USD' },
 ];
 // Five years, not the two a score needs (post-Phase 7 hardening, step 3):
 // enough for the frontend's charts to show a trend.
@@ -134,7 +142,18 @@ export async function upsertFact(cik: string, tag: string, fact: UsGaapFact, uni
  * its most recent Revenue/NetIncomeLoss facts into Postgres.
  */
 export async function upsertCompanyFacts(cik: string): Promise<{ cik: string; entityName: string }> {
-  const data = await fetchCompanyFacts(cik);
+  return storeCompanyFacts(cik, await fetchCompanyFacts(cik));
+}
+
+/**
+ * Stores a company and its facts from a companyfacts document already in
+ * hand - fetched from SEC by upsertCompanyFacts, or read from SEC's nightly
+ * bulk file by scripts/backfillFromBulk.ts, which re-ingests the whole
+ * universe without a single per-company request (post-Phase 7 hardening,
+ * step 3, F1b-2).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- same untyped raw companyfacts JSON as fetchCompanyFacts.
+export async function storeCompanyFacts(cik: string, data: any): Promise<{ cik: string; entityName: string }> {
   const paddedCik = padCik(cik);
 
   await upsertCompany(paddedCik, data.entityName);

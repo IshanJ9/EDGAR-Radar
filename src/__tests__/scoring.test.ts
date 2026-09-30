@@ -35,6 +35,9 @@ import {
   SGA_TAGS,
   REVENUE_TAGS,
   NET_INCOME_TAGS,
+  COST_OF_REVENUE_TAGS,
+  SELLING_MARKETING_TAGS,
+  GENERAL_ADMIN_TAGS,
 } from '../sec';
 import { AnnualValue } from '../repositories/scoringRepository';
 
@@ -365,5 +368,151 @@ describe('computeBeneishMScore', () => {
     fixtureRepository(fixtures);
     const result = await computeBeneishMScore('0000000001');
     expect(result.status).toBe('insufficient-history');
+  });
+});
+
+/**
+ * Post-Phase 7 hardening, step 3 (F1b-2). Each figure used to be read as
+ * "its own latest year" independently, so a company missing one figure for
+ * its newest year had that figure's older year silently paired with every
+ * other figure's newer one. Scores now use the most recent fiscal year that
+ * EVERY figure has (and, for the two-year scores, the year immediately
+ * before it) - and derive gross profit and SG&A where a company reports
+ * their parts instead.
+ */
+describe('year alignment and derived figures', () => {
+  const beneish = (overrides: Array<[string[], AnnualValue[] | undefined]> = []) => {
+    const map = new Map<string[], AnnualValue[]>([
+      [ASSETS_TAGS, years(2024, 1000, 1000)],
+      [CURRENT_ASSETS_TAGS, years(2024, 300, 300)],
+      [CURRENT_LIABILITIES_TAGS, years(2024, 200, 200)],
+      [LONG_TERM_DEBT_TAGS, years(2024, 100, 100)],
+      [OPERATING_CASH_FLOW_TAGS, years(2024, 100, 100)],
+      [NET_INCOME_TAGS, years(2024, 100, 100)],
+      [REVENUE_TAGS, years(2024, 800, 800)],
+      [GROSS_PROFIT_TAGS, years(2024, 400, 400)],
+      [RECEIVABLES_TAGS, years(2024, 80, 80)],
+      [PPE_TAGS, years(2024, 200, 200)],
+      [DEPRECIATION_TAGS, years(2024, 50, 50)],
+      [SGA_TAGS, years(2024, 100, 100)],
+    ]);
+    for (const [tags, values] of overrides) {
+      if (values === undefined) map.delete(tags);
+      else map.set(tags, values);
+    }
+    return map;
+  };
+
+  test('Altman uses the newest year EVERY figure has - not assets from one year and EBIT from another', async () => {
+    fixtureRepository(
+      new Map<string[], AnnualValue[]>([
+        [ASSETS_TAGS, years(2025, 5000, 1000)], // 2025 exists for assets only
+        [CURRENT_ASSETS_TAGS, years(2024, 300)],
+        [CURRENT_LIABILITIES_TAGS, years(2024, 200)],
+        [RETAINED_EARNINGS_TAGS, years(2024, 100)],
+        [OPERATING_INCOME_TAGS, years(2024, 150)],
+        [STOCKHOLDERS_EQUITY_TAGS, years(2024, 400)],
+        [LIABILITIES_TAGS, years(2024, 600)],
+      ]),
+    );
+
+    const result = await computeAltmanZDoublePrime('1');
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.inputs.fiscalYear).toBe(2024);
+    expect(result.inputs.totalAssets).toBe(1000);
+  });
+
+  test('Piotroski falls back to the newest pair of consecutive years that every figure has', async () => {
+    const three = (a: number, b: number, c: number) => years(2025, a, b, c);
+    fixtureRepository(
+      new Map<string[], AnnualValue[]>([
+        [ASSETS_TAGS, three(1000, 1000, 1000)],
+        [CURRENT_ASSETS_TAGS, three(300, 300, 300)],
+        [CURRENT_LIABILITIES_TAGS, three(200, 200, 200)],
+        [LONG_TERM_DEBT_TAGS, three(100, 100, 100)],
+        [OPERATING_CASH_FLOW_TAGS, three(100, 100, 100)],
+        [NET_INCOME_TAGS, three(50, 50, 50)],
+        [SHARES_OUTSTANDING_TAGS, years(2024, 10, 10)], // no 2025
+        [GROSS_PROFIT_TAGS, three(400, 400, 400)],
+        [REVENUE_TAGS, three(800, 800, 800)],
+      ]),
+    );
+
+    const result = await computePiotroskiFScore('1');
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect([result.inputs.fiscalYearCurrent, result.inputs.fiscalYearPrior]).toEqual([2024, 2023]);
+  });
+
+  test('the two years must be consecutive', async () => {
+    fixtureRepository(beneish([[REVENUE_TAGS, [{ fiscalYear: 2024, value: 800 }, { fiscalYear: 2022, value: 800 }]]]));
+
+    const result = await computeBeneishMScore('1');
+
+    expect(result).toEqual({ status: 'insufficient-history', reason: expect.stringContaining('consecutive') });
+  });
+
+  test('gross profit is derived as revenue minus cost of revenue when not reported', async () => {
+    // Different margins in the two years: the score compares them as a ratio,
+    // so identical years would hide a wrong derivation (a mutation check
+    // caught exactly that). Revenue is 800 in both years.
+    fixtureRepository(beneish([[GROSS_PROFIT_TAGS, years(2024, 400, 300)]]));
+    const reported = await computeBeneishMScore('1');
+    fixtureRepository(beneish([[GROSS_PROFIT_TAGS, undefined], [COST_OF_REVENUE_TAGS, years(2024, 400, 500)]]));
+
+    const derived = await computeBeneishMScore('1');
+
+    expect(derived.status).toBe('ok');
+    if (derived.status !== 'ok' || reported.status !== 'ok') return;
+    expect(derived.value).toBe(reported.value);
+    expect(derived.inputs.derived).toEqual(['grossProfit']);
+  });
+
+  test('SG&A is derived as selling-and-marketing plus general-and-administrative when both are reported', async () => {
+    fixtureRepository(beneish());
+    const reported = await computeBeneishMScore('1');
+    fixtureRepository(
+      beneish([
+        [SGA_TAGS, undefined],
+        [SELLING_MARKETING_TAGS, years(2024, 60, 60)],
+        [GENERAL_ADMIN_TAGS, years(2024, 40, 40)],
+      ]),
+    );
+
+    const derived = await computeBeneishMScore('1');
+
+    expect(derived.status).toBe('ok');
+    if (derived.status !== 'ok' || reported.status !== 'ok') return;
+    expect(derived.value).toBe(reported.value);
+    expect(derived.inputs.derived).toEqual(['sga']);
+  });
+
+  test('general-and-administrative alone is NOT used as SG&A - it would understate it', async () => {
+    fixtureRepository(beneish([[SGA_TAGS, undefined], [GENERAL_ADMIN_TAGS, years(2024, 40, 40)]]));
+
+    const result = await computeBeneishMScore('1');
+
+    expect(result).toEqual({ status: 'insufficient-history', reason: expect.stringContaining('sga') });
+  });
+
+  test('a reported figure always wins over one derived from its parts', async () => {
+    fixtureRepository(beneish());
+    const reportedOnly = await computeBeneishMScore('1');
+    // The parts are ALSO reported, with values that would change the score.
+    fixtureRepository(
+      beneish([
+        [COST_OF_REVENUE_TAGS, years(2024, 100, 700)],
+        [SELLING_MARKETING_TAGS, years(2024, 10, 500)],
+        [GENERAL_ADMIN_TAGS, years(2024, 10, 500)],
+      ]),
+    );
+
+    const result = await computeBeneishMScore('1');
+
+    expect(result.status === 'ok' && result.inputs.derived).toEqual([]);
+    expect(result.status === 'ok' && reportedOnly.status === 'ok' && result.value).toBe(reportedOnly.status === 'ok' && reportedOnly.value);
   });
 });
