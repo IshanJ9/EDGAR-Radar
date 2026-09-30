@@ -35,7 +35,6 @@ jest.mock('../sec', () => ({
   fetchSubmissions: jest.fn(),
 }));
 
-import nock from 'nock';
 import request from 'supertest';
 import { app } from '../app';
 import * as scoring from '../scoring';
@@ -65,12 +64,9 @@ function expectNoSecRequests() {
   expect(sec.fetchSubmissions).not.toHaveBeenCalled();
 }
 
-// jest.setup.ts blocks every real network connection. Supertest talks to the
-// app over a loopback socket, so allow loopback only: a request to SEC (or
-// anywhere else) still fails the test.
-beforeAll(() => nock.enableNetConnect('127.0.0.1'));
-afterAll(() => nock.disableNetConnect());
-
+// jest.setup.ts blocks every real network connection except loopback, which
+// Supertest uses to reach the app: a request to SEC (or anywhere else) still
+// fails the test.
 beforeEach(() => {
   jest.clearAllMocks();
   stubScores();

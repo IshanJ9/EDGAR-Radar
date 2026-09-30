@@ -23,7 +23,9 @@
  * SEC client (src/sec.ts) uses Node's built-in fetch, which older nock
  * versions could not intercept at all, while other libraries use `https`.
  */
+import http from 'http';
 import https from 'https';
+import { AddressInfo } from 'net';
 
 const REAL_HOST_URL = 'https://example.com/';
 const GUARD_REFUSAL = /Disallowed net connect/;
@@ -45,5 +47,23 @@ describe('network guard (jest.setup.ts)', () => {
       req.on('error', (err) => resolve(err.message));
     });
     expect(outcome).toMatch(GUARD_REFUSAL);
+  });
+
+  // Post-Phase 7 hardening, step 3: loopback is allowed so Supertest can reach
+  // the app under test - and nothing that merely looks like loopback.
+  test('allows a request to a server on 127.0.0.1', async () => {
+    const server = http.createServer((_req, res) => res.end('local'));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const res = await fetch(`http://127.0.0.1:${port}/`);
+      expect(await res.text()).toBe('local');
+    } finally {
+      server.close();
+    }
+  });
+
+  test('refuses a host that only starts like loopback', async () => {
+    await expect(fetch('https://127.0.0.1.example.com/', { signal: AbortSignal.timeout(5000) })).rejects.toThrow(GUARD_REFUSAL);
   });
 });

@@ -51,6 +51,15 @@ process.env.JWT_SECRET ??= 'unit-test-placeholder-jwt-secret';
  * patches Node's HTTP client machinery only. It has no effect on `pg`'s raw
  * TCP wire protocol to the throwaway Postgres container, so this cannot
  * block those tests' real database connection.
+ *
+ * Loopback is allowed (post-Phase 7 hardening, step 3): Supertest reaches the
+ * app under test over 127.0.0.1, and a loopback request cannot leave the
+ * machine. It has to be allowed HERE, for every test file, not in the one
+ * file that needs it: nock patches Node's global HTTP module, and when several
+ * test files share a Jest worker (as on CI's 2-core runners) each file's own
+ * copy of nock stays installed - so an earlier file's block-everything guard
+ * still refused Supertest's connection even after the later file allowed it.
  */
 import nock from 'nock';
 nock.disableNetConnect();
+nock.enableNetConnect((host) => /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host));
