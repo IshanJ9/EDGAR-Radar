@@ -1131,3 +1131,13 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - **Nothing alerts if a nightly backup fails** — it is only logged. The heartbeat step (step 5) or the Slack step could cover it.
   - **Restoring needs the account owner's Oracle credentials** (the VM's link cannot read), which is the point — but it means a restore is a manual job, not a script.
   - The VM's `.env` is mode 664 (readable by other users on the VM); there are none besides `ubuntu`, so left as is.
+
+- [x] Hardening, step 6 — **README.md.** Done 2026-09-30, at the user's request ahead of steps 2–5, for their portfolio.
+
+  **Contents:** a one-paragraph summary and a link to the plain-English explainer (`docs/edgar-radar-explained.md`); the live API link; what the system does; a Mermaid architecture diagram (poller → BullMQ → parser → scoring → notification workers, primary + replica, response cache, heartbeat, reconciliation, backup to Object Storage, the shared SEC budget); engineering highlights with production-measured numbers (the SEC rate bound, the exactly-once poller fix, one alert per outage, the load-test table, the replica circuit breaker, streaming reconciliation, the tested backup restore, local embeddings, $0 hosting); tech stack; API reference; running locally and the tests; project structure; a status table with known limits; links to the other documents.
+
+  **Checked before handing over,** against the code and this log. Three claims were corrected: the scoring worker's queue is `scores.updated` (the diagram said "scored"); the server entry point is `src/server.ts`, not in `scripts/`; and "works from a clean checkout" was verified on 2026-09-15, before the replica, cache and background-job services existed, so it is now dated rather than presented as current.
+
+  **Honest limits stated in it:** plain HTTP on a bare IP; the health scores are computed but have no HTTP endpoint (they appear in watchlist notifications); alerts go to logs until a Slack webhook is configured; no frontend yet.
+
+  **One side effect:** checking the README's example requests, a `GET /companies/0000320193/risk-factor-diff` against production returned 200. Production had no stored diffs, so this request computed Apple's diff, which fetched Apple's two most recent 10-Ks from SEC through the API's own rate-limited client — a few real SEC requests, inside its 1-per-second share.

@@ -280,7 +280,8 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 - [ ] Frontend for non-technical visitors — planned as its own section before building (search, company pages with plain-English scores, charts, HTTPS and a domain).
 - [ ] Skip redundant SEC downloads — a filing that carries no financial data (e.g. bond prospectuses: 424B2, FWP) should not trigger a `companyfacts` re-download.
 - [ ] Heartbeat blind spot — alert when poll cycles complete but fail to check companies (e.g. SEC blocking the host), not only when cycles stop.
-- [ ] README for the repository.
+- [x] README for the repository.
+      **Done 2026-09-30, at the user's request ahead of steps 2–5** (for their portfolio). What it does, an architecture diagram, engineering highlights with measured numbers, tech stack, API reference, how to run and test, project structure, and an honest status table. Every claim was checked against the code or PROGRESS.md; three were corrected before handing over. See PROGRESS.md.
 
 **Done when:** a backup taken in production has been restored into a fresh database with matching row counts; a deliberate outage delivers a real Slack message; a filing with no financial data causes no `companyfacts` request; a poll cycle in which every company check fails raises one alert; a non-technical person can find a company and read its scores without help; and the repository has a README.
 
