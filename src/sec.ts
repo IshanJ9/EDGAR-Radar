@@ -170,6 +170,13 @@ export const REVENUE_TAGS = [
   'RevenueFromContractWithCustomerExcludingAssessedTax',
   'SalesRevenueNet',
   'SalesRevenueGoodsNet',
+  // Post-Phase 7 hardening, step 3 (F1b-2), from the tags the 11 companies
+  // with no recent revenue pair actually used (SEC bulk data, 2026-09-30):
+  // revenue including excise taxes; banks' revenue net of interest expense;
+  // utilities' regulated plus unregulated revenue.
+  'RevenueFromContractWithCustomerIncludingAssessedTax',
+  'RevenuesNetOfInterestExpense',
+  'RegulatedAndUnregulatedOperatingRevenue',
 ];
 export const NET_INCOME_TAGS = ['NetIncomeLoss', 'ProfitLoss'];
 
@@ -191,9 +198,25 @@ export const OPERATING_CASH_FLOW_TAGS = ['NetCashProvidedByUsedInOperatingActivi
 // a third real-world variant, used by heavily-leveraged companies that
 // combine long-term debt and capital lease obligations under one tag.
 export const LONG_TERM_DEBT_TAGS = ['LongTermDebtNoncurrent', 'LongTermDebt', 'LongTermDebtAndCapitalLeaseObligations'];
-export const SHARES_OUTSTANDING_TAGS = ['CommonStockSharesOutstanding']; // unit: shares, not USD
+// unit: shares, not USD. The weighted-average basic count (F1b-2) is the usual
+// proxy for Piotroski's "no new shares issued" signal; 66 of the 68 companies
+// with no recent pair of CommonStockSharesOutstanding report it. SEC's
+// cover-page count (dei:EntityCommonStockSharesOutstanding) was not used: it is
+// dated weeks after the fiscal year end, so a December year end would be
+// labelled the following year.
+export const SHARES_OUTSTANDING_TAGS = ['CommonStockSharesOutstanding', 'WeightedAverageNumberOfSharesOutstandingBasic'];
 export const GROSS_PROFIT_TAGS = ['GrossProfit'];
-export const RECEIVABLES_TAGS = ['AccountsReceivableNetCurrent'];
+// When a company reports no GrossProfit, scoring derives it as revenue minus
+// cost of revenue (F1b-2) - 69 of the 140 companies without it report one of these.
+export const COST_OF_REVENUE_TAGS = [
+  'CostOfRevenue',
+  'CostOfGoodsAndServicesSold',
+  'CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization',
+  'CostOfGoodsSold',
+];
+// Same meaning under other names (F1b-2): 36 of the 68 companies without
+// AccountsReceivableNetCurrent report one of these.
+export const RECEIVABLES_TAGS = ['AccountsReceivableNetCurrent', 'ReceivablesNetCurrent', 'AccountsReceivableNet'];
 export const PPE_TAGS = ['PropertyPlantAndEquipmentNet'];
 // DepreciationAndAmortization (no "Depletion") confirmed as a 4th real
 // variant against Under Armour's actual pre-2018 filings (Phase 5 step 6).
@@ -204,6 +227,11 @@ export const DEPRECIATION_TAGS = [
   'DepreciationAndAmortization',
 ];
 export const SGA_TAGS = ['SellingGeneralAndAdministrativeExpense'];
+// When a company reports no combined SG&A, scoring sums its two components -
+// but only when BOTH are reported for the same years (F1b-2: 24 companies).
+// General and administrative alone would understate SG&A, so it is not used.
+export const SELLING_MARKETING_TAGS = ['SellingAndMarketingExpense'];
+export const GENERAL_ADMIN_TAGS = ['GeneralAndAdministrativeExpense'];
 
 export interface AnnualFactResult {
   tag: string;
