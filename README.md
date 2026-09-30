@@ -177,7 +177,7 @@ docker/             Postgres replica setup, backup job
 |---|---|
 | ✅ Done | Phases 0–7 of the [roadmap](ROADMAP.md): ingestion, normalization, the poller, queue and workers, scoring and risk-factor diffs, CI/CD and deployment, and scaling (replica, cache, load test). Also production ingestion (the poller, reconciliation and heartbeat live) and nightly off-box backups. |
 | 🚧 Next | A web frontend for non-technical users (search, plain-English scores, charts) with HTTPS and a domain; deeper history, so more companies can be scored. |
-| ⚠️ Known limits | Served over plain HTTP on a bare IP. About two years of history is stored per figure, so only 33 of 196 companies can get all three scores today. Every issue found is logged in [PROGRESS.md](PROGRESS.md), including the fixed ones. |
+| ⚠️ Known limits | Served over plain HTTP on a bare IP. Only 27 of 196 companies can get all three scores today: many report figures (gross profit, SG&A, receivables, shares) under names ingestion doesn't read yet. Every issue found is logged in [PROGRESS.md](PROGRESS.md), including the fixed ones. |
 
 ---
 
