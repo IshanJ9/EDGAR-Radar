@@ -23,12 +23,24 @@ export interface AnnualValue {
  * irregularity), not whatever is most recent as of today.
  */
 export async function getAnnualValues(cik: string, tags: string[], years = 2, beforeFiscalYear?: number): Promise<AnnualValue[]> {
+  // Post-Phase 7 hardening, step 3 (F1b): only full-year values (a 10-K can
+  // also report its fourth quarter, tagged FY), and only ONE tag - the one
+  // with the most recent year, then priority order. Rows under an older tag
+  // may still be stored from before ingestion preferred the freshest tag, and
+  // taking one year from each would compare two different measures.
   const result = await pool.query(
-    `SELECT fiscal_year, value FROM (
-       SELECT DISTINCT ON (fiscal_year) fiscal_year, value, effective_from
+    `WITH annual AS (
+       SELECT tag, fiscal_year, value, effective_from
        FROM filing_facts
        WHERE cik = $1 AND tag = ANY($2) AND form = '10-K' AND fiscal_period = 'FY'
+         AND (period_start IS NULL OR period_end - period_start BETWEEN 330 AND 400)
          AND ($4::int IS NULL OR fiscal_year <= $4)
+     ), chosen AS (
+       SELECT tag FROM annual ORDER BY fiscal_year DESC, array_position($2::text[], tag) LIMIT 1
+     )
+     SELECT fiscal_year, value FROM (
+       SELECT DISTINCT ON (fiscal_year) fiscal_year, value, effective_from
+       FROM annual WHERE tag = (SELECT tag FROM chosen)
        ORDER BY fiscal_year DESC, effective_from DESC
      ) latest
      ORDER BY fiscal_year DESC

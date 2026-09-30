@@ -10,7 +10,7 @@
  * Only ever run via `npm run test:integration`, never `npm test`.
  */
 import { pool } from '../db';
-import { upsertFact, getFactsByCik, getCompanyByCik } from '../repositories/companyRepository';
+import { upsertFact, getFactsByCik, getCompanyByCik, updateCompanyIndustry, getIndustries } from '../repositories/companyRepository';
 import { UsGaapFact } from '../sec';
 
 const CIK = '0000000001';
@@ -44,6 +44,39 @@ afterAll(async () => {
 });
 
 describe('upsertFact + getFactsByCik', () => {
+  // Post-Phase 7 hardening, step 3 (F1b): SEC's `fy` is the fiscal year of the
+  // FILING. A 10-K's comparative column (last year's figure) carries this
+  // year's `fy`, so storing it as-is mislabelled every restated year.
+  test('an annual 10-K value is labelled with the fiscal year of its period, not of the filing', async () => {
+    await seedCompany(CIK);
+    await upsertFact(CIK, 'Assets', fact({ end: '2023-09-30', fy: 2025, fp: 'FY', form: '10-K' }));
+
+    const [row] = await getFactsByCik(CIK);
+    expect(row!.fiscal_year).toBe(2023);
+  });
+
+  test('re-ingesting a row stored under the old, wrong label corrects it', async () => {
+    await seedCompany(CIK);
+    await pool.query(
+      `INSERT INTO filing_facts (cik, tag, unit, value, period_end, fiscal_year, fiscal_period, form, accn, filed_date, effective_from)
+       VALUES ($1, 'Assets', 'USD', 1000, '2023-09-30', 2025, 'FY', '10-K', '0000000001-25-000001', '2025-02-01', '2025-02-01')`,
+      [CIK],
+    );
+
+    await upsertFact(CIK, 'Assets', fact({ end: '2023-09-30', fy: 2025, accn: '0000000001-25-000001', filed: '2025-02-01' }));
+
+    const [row] = await getFactsByCik(CIK);
+    expect(row!.fiscal_year).toBe(2023);
+  });
+
+  test('a quarterly value keeps the fiscal year SEC gives it', async () => {
+    await seedCompany(CIK);
+    await upsertFact(CIK, 'Revenues', fact({ start: '2026-03-29', end: '2026-06-27', fy: 2026, fp: 'Q3', form: '10-Q' }));
+
+    const [row] = await getFactsByCik(CIK);
+    expect(row!.fiscal_year).toBe(2026);
+  });
+
   test('re-ingesting the exact same filing (same accn) updates in place, not a duplicate row', async () => {
     await seedCompany(CIK);
     await upsertFact(CIK, 'Assets', fact({ val: 1000 }));
@@ -131,6 +164,34 @@ describe('getCompanyByCik', () => {
   test('returns the stored record for a real company', async () => {
     await seedCompany(CIK, 'Test Company Inc.');
     const company = await getCompanyByCik(CIK);
-    expect(company).toEqual({ cik: CIK, entityName: 'Test Company Inc.' });
+    expect(company).toEqual({ cik: CIK, entityName: 'Test Company Inc.', industry: null });
+  });
+});
+
+describe('updateCompanyIndustry + getIndustries (post-Phase 7 hardening, step 3, F1b)', () => {
+  test('records the industry, which the company record and the industry map then carry', async () => {
+    await seedCompany(CIK);
+    await updateCompanyIndustry(CIK, '6021', 'National Commercial Banks');
+
+    expect((await getCompanyByCik(CIK))!.industry).toBe('National Commercial Banks');
+    expect(await getIndustries()).toEqual(new Map([[CIK, 'National Commercial Banks']]));
+  });
+
+  test('an unchanged industry is not rewritten', async () => {
+    await seedCompany(CIK);
+    await updateCompanyIndustry(CIK, '6021', 'National Commercial Banks');
+    const { rows: before } = await pool.query('SELECT updated_at FROM companies WHERE cik = $1', [CIK]);
+
+    await updateCompanyIndustry(CIK, '6021', 'National Commercial Banks');
+
+    const { rows: after } = await pool.query('SELECT updated_at FROM companies WHERE cik = $1', [CIK]);
+    expect(after[0].updated_at).toEqual(before[0].updated_at);
+  });
+
+  test('a company that is not stored is left alone - no row is created', async () => {
+    await updateCompanyIndustry('0000009999', '3571', 'Electronic Computers');
+
+    expect(await getCompanyByCik('0000009999')).toBeNull();
+    expect((await getIndustries()).size).toBe(0);
   });
 });

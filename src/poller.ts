@@ -9,6 +9,7 @@ import {
   findDiscoveredAccessions,
   recordDiscoveredFiling,
 } from './repositories/pollerRepository';
+import { updateCompanyIndustry } from './repositories/companyRepository';
 import { filingDiscoveredQueue } from './queues';
 import { loadUniverse, UniverseEntry } from './universe';
 
@@ -75,6 +76,12 @@ export async function runPollCycle(universeOverride?: UniverseEntry[]): Promise<
         // single bad cycle.
         await recordFailure(company.cik, message);
         continue;
+      }
+
+      // The industry rides along in the document just fetched: recording it
+      // costs no extra SEC request (post-Phase 7 hardening, step 3, F1b).
+      if (submissions.sic && submissions.sicDescription) {
+        await updateCompanyIndustry(company.cik, submissions.sic, submissions.sicDescription);
       }
 
       // SEC's filingDate has no time, so it can't be compared with the cursor

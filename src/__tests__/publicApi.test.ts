@@ -23,6 +23,7 @@ jest.mock('../scoring', () => ({
 jest.mock('../repositories/companyRepository', () => ({
   getCompanyByCik: jest.fn(),
   getFactsByCik: jest.fn(),
+  getIndustries: jest.fn(),
   upsertCompanyFacts: jest.fn(),
 }));
 jest.mock('../repositories/statsRepository', () => ({
@@ -73,7 +74,9 @@ beforeEach(() => {
 });
 
 describe('GET /companies', () => {
-  test('lists every monitored company with a rating summary, without the score inputs', async () => {
+  test('lists every monitored company with its industry and a rating summary, without the score inputs', async () => {
+    jest.mocked(companyRepository.getIndustries).mockResolvedValue(new Map([['0000320193', 'Electronic Computers']]));
+
     const res = await request(app).get('/companies').expect(200);
 
     expect(res.body.count).toBe(2);
@@ -81,6 +84,7 @@ describe('GET /companies', () => {
       cik: '0000320193',
       ticker: 'AAPL',
       name: 'Apple Inc.',
+      industry: 'Electronic Computers',
       ratings: {
         altmanZ: { status: 'ok', value: 1.685, classification: 'grey-zone' },
         piotroskiF: { status: 'insufficient-history' },
@@ -88,6 +92,7 @@ describe('GET /companies', () => {
       },
     });
     expect(res.body.companies[1].ratings.altmanZ).toEqual({ status: 'insufficient-history' });
+    expect(res.body.companies[1].industry).toBeNull(); // not seen by the poller yet
     expectNoSecRequests();
   });
 });

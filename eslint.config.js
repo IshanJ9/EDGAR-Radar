@@ -12,7 +12,7 @@ const globals = require('globals');
  */
 module.exports = tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.cache/**', 'migrations/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.cache/**', 'migrations/**', '.claude/**'],
   },
   eslint.configs.recommended,
   {
