@@ -26,8 +26,14 @@ export async function sendSlackAlert(text: string): Promise<void> {
     body: JSON.stringify({ text }),
   });
 
+  // Throw, don't just log: the heartbeat records an alert as sent only after
+  // this returns, so a rejected delivery must fail loudly to be retried at
+  // the next check. The message names the status, never the webhook URL,
+  // which is a secret.
   if (!response.ok) {
-    logger.error({ status: response.status, body: await response.text() }, 'Failed to send Slack alert');
+    const body = await response.text();
+    logger.error({ status: response.status, body }, 'Failed to send Slack alert');
+    throw new Error(`Slack rejected the alert: HTTP ${response.status}`);
   }
 }
 
