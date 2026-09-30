@@ -17,7 +17,7 @@ const MINUTE = 60_000;
 const T0 = new Date('2026-09-26T12:00:00Z').getTime();
 
 /** In-memory poller_runs (successes only) and alert_state, driven by a fake clock. */
-function world() {
+function world(deliver: (text: string) => Promise<void> = async () => undefined) {
   let clock = T0;
   const successes: Date[] = [];
   let lastAlertedAt: Date | undefined;
@@ -49,7 +49,10 @@ function world() {
         await checkPollerHeartbeat(THRESHOLD, {
           now: () => new Date(clock),
           monitoringSince,
-          send: async (text) => void sent.push(text),
+          send: async (text) => {
+            await deliver(text);
+            sent.push(text);
+          },
         })
       ).alerted,
     /** Checks every 15 minutes for `minutes`, returning how many alerted. */
@@ -115,6 +118,24 @@ test('a fresh deploy gets the full threshold before a "no cycle yet" alert', asy
   w.pollSucceeds(); // first cycle completes
   expect(await w.checksFor(30)).toBe(0);
   expect(w.sent).toHaveLength(0);
+});
+
+test('if delivery fails, the alert is not recorded and the next check sends it', async () => {
+  let slackDown = true;
+  const w = world(async () => {
+    if (slackDown) throw new Error('Slack rejected the alert: HTTP 500');
+  });
+  w.pollSucceeds();
+  expect(await w.checksFor(60)).toBe(0);
+
+  w.advance(15);
+  await expect(w.check()).rejects.toThrow('HTTP 500'); // 75 min: delivery fails
+
+  slackDown = false;
+  w.advance(15);
+  expect(await w.check()).toBe(true); // 90 min: retried, delivered
+  expect(await w.checksFor(60)).toBe(0); // then once per outage again
+  expect(w.sent).toHaveLength(1);
 });
 
 test('a poller that never completes a cycle is reported once, after the threshold', async () => {
