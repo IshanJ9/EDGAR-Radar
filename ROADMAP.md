@@ -268,6 +268,23 @@ bottom, one unchecked step at a time, per `CLAUDE.md`.
 **Done when:** a poll cycle runs in production every 30 minutes and its discovered filings are ingested by the parser worker; reconciliation completes nightly; the heartbeat detects a deliberately stopped poller and alerts exactly once; and the configured SEC budget provably cannot exceed 10 requests in any second.
 - **MET 2026-09-28.** A cycle runs every 30 minutes in production, and on 2026-09-28 the parser worker ingested all 82 filings the poller discovered (step 5 — after fixing a defect that had hidden every daytime filing); reconciliation completed its first nightly run on 2026-09-27 (196 companies, 0 discrepancies); a deliberate 2 h 42 min poller outage produced exactly one alert (step 4); `secBudget.test.ts` enforces the ≤10-per-second bound on the real Compose file (step 1).
 
+## Post-Phase 7 — Hardening and presentation
+**Added 2026-09-30 at the user's request; not part of the original roadmap.** Production now ingests filings on its own, but it has no backup, its alerts reach no one, and nothing presents it to a non-technical visitor. Phase 8 (India) is skipped for now by the user's decision. Done one step at a time, like every phase above.
+
+**Goal:** production survives losing its VM, tells a human when something breaks, stops making redundant SEC requests, and can be understood and used by someone with no technical background.
+
+**Build:**
+- [ ] Nightly off-box database backup to Oracle Object Storage (Always Free: 20 GB, 50,000 requests/month — verified against Oracle's documentation 2026-09-30). A write-only pre-authenticated upload link on the VM, one dump per day of the month so a month of history rotates without deletes. *Azure Blob was considered and rejected: the Azure for Students subscription stops every resource when its credit expires within 12 months.*
+      **Built 2026-09-30; a real production backup restored with every table matching; the scheduled service deploys on merge.** A `backup` Compose service (Postgres 16 + curl) dumps, checks and uploads at 03:00 UTC. A production dump (242,568 bytes) was downloaded with the account owner's credentials and restored into a fresh Postgres: 17/17 tables, identical row counts to production. See PROGRESS.md.
+- [ ] Slack webhook for alerts — the user creates the free webhook; wire it into production and test that a real alert arrives.
+- [ ] Frontend for non-technical visitors — planned as its own section before building (search, company pages with plain-English scores, charts, HTTPS and a domain).
+- [ ] Skip redundant SEC downloads — a filing that carries no financial data (e.g. bond prospectuses: 424B2, FWP) should not trigger a `companyfacts` re-download.
+- [ ] Heartbeat blind spot — alert when poll cycles complete but fail to check companies (e.g. SEC blocking the host), not only when cycles stop.
+- [x] README for the repository.
+      **Done 2026-09-30, at the user's request ahead of steps 2–5** (for their portfolio). What it does, an architecture diagram, engineering highlights with measured numbers, tech stack, API reference, how to run and test, project structure, and an honest status table. Every claim was checked against the code or PROGRESS.md; three were corrected before handing over. See PROGRESS.md.
+
+**Done when:** a backup taken in production has been restored into a fresh database with matching row counts; a deliberate outage delivers a real Slack message; a filing with no financial data causes no `companyfacts` request; a poll cycle in which every company check fails raises one alert; a non-technical person can find a company and read its scores without help; and the repository has a README.
+
 ---
 
 ## Phase 8 — India Extension (later)
