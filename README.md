@@ -106,9 +106,13 @@ Base URL: `http://80.225.253.10:3000`. CIKs are SEC company IDs, e.g. `000032019
 
 | Method | Path | Description |
 |---|---|---|
+| `GET` | `/companies` | All 196 monitored companies, each with a summary of its three health scores. |
 | `GET` | `/companies/:cik` | Company name. Fetched from SEC on first request, then stored. |
+| `GET` | `/companies/:cik/scores` | Altman Z″, Piotroski F and Beneish M with their inputs; "insufficient history" when a score can't be computed fairly. Stored companies only. |
 | `GET` | `/companies/:cik/facts` | Normalized financial facts. Served from cache (`X-Cache: HIT/MISS`). |
 | `GET` | `/companies/:cik/risk-factor-diff` | New and removed risk factors between the last two 10-Ks. |
+| `GET` | `/filings/recent` | Filings discovered in the last `hours` (default 24, max 168), newest first, with plain categories. `exclude=offering` folds away routine bond paperwork. |
+| `GET` | `/stats` | Live pipeline numbers: companies monitored, last poll, last nightly reconciliation, filings in the last 24 hours. |
 | `POST` | `/auth/register` | `{ "email", "password" }` (password ≥ 8 characters) |
 | `POST` | `/auth/login` | `{ "email", "password" }` → `{ "token" }` |
 | `GET` | `/watchlist` | Your watched companies. Needs `Authorization: Bearer <token>`. |
@@ -138,8 +142,8 @@ The image build downloads the embedding model once, from Hugging Face.
 
 ```bash
 npm install
-npm test                  # 170 unit tests; no network, SEC is mocked with nock
-npm run test:integration  # 19 tests against a throwaway Postgres in Docker
+npm test                  # 204 unit tests; no network, SEC is mocked with nock
+npm run test:integration  # 23 tests against a throwaway Postgres in Docker
 npm run lint
 ```
 
@@ -172,8 +176,8 @@ docker/             Postgres replica setup, backup job
 | | |
 |---|---|
 | ✅ Done | Phases 0–7 of the [roadmap](ROADMAP.md): ingestion, normalization, the poller, queue and workers, scoring and risk-factor diffs, CI/CD and deployment, and scaling (replica, cache, load test). Also production ingestion (the poller, reconciliation and heartbeat live) and nightly off-box backups. |
-| 🚧 Next | A web frontend for non-technical users (search, plain-English scores, charts) with HTTPS and a domain; Slack delivery for alerts; an API endpoint for the health scores. |
-| ⚠️ Known limits | Served over plain HTTP on a bare IP. Scores are computed but not yet exposed over HTTP; they appear in watchlist notifications. Alerts go to logs until a Slack webhook is configured. Every issue found is logged in [PROGRESS.md](PROGRESS.md), including the fixed ones. |
+| 🚧 Next | A web frontend for non-technical users (search, plain-English scores, charts) with HTTPS and a domain; deeper history, so more companies can be scored. |
+| ⚠️ Known limits | Served over plain HTTP on a bare IP. About two years of history is stored per figure, so only 33 of 196 companies can get all three scores today. Every issue found is logged in [PROGRESS.md](PROGRESS.md), including the fixed ones. |
 
 ---
 

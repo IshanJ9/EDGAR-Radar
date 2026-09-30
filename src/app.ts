@@ -3,6 +3,8 @@ import pinoHttp from 'pino-http';
 import companiesRouter from './routes/companies';
 import authRouter from './routes/auth';
 import watchlistRouter from './routes/watchlist';
+import statsRouter from './routes/stats';
+import filingsRouter from './routes/filings';
 import { bullBoardRouter } from './bullBoard';
 import { createLogger } from './logger';
 
@@ -21,6 +23,8 @@ app.use(express.json());
 app.use('/companies', companiesRouter);
 app.use('/auth', authRouter);
 app.use('/watchlist', watchlistRouter);
+app.use('/stats', statsRouter);
+app.use('/filings', filingsRouter);
 
 // Bull Board is an unauthenticated, WRITE-CAPABLE admin surface - it can
 // retry, promote and delete jobs, not just display them. That was fine while
