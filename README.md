@@ -93,7 +93,7 @@ Each of these was **tested, and verified in production** where that was possible
 | API | Express 5, Zod validation, JWT + bcrypt auth, pino structured logging |
 | Data | PostgreSQL 16 (primary + streaming replica), node-pg-migrate |
 | Queue / cache | Redis, BullMQ; a separate LRU Redis for response caching |
-| ML | `@xenova/transformers` (ONNX), `all-MiniLM-L6-v2` sentence embeddings |
+| ML | `@huggingface/transformers` (ONNX), `all-MiniLM-L6-v2` sentence embeddings |
 | Testing | Jest, Supertest, nock (network blocked in tests), integration tests on throwaway Postgres |
 | CI/CD | GitHub Actions (lint, unit tests, build, integration tests) → deploy on merge; protected `Main` |
 | Infrastructure | Docker Compose on Oracle Cloud Always Free (ARM); Oracle Object Storage for backups |

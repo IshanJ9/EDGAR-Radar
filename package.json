@@ -8,6 +8,7 @@
     "dev": "ts-node src/server.ts",
     "build": "tsc",
     "warm-model-cache": "ts-node scripts/warmModelCache.ts",
+    "check-embeddings": "ts-node scripts/checkEmbeddings.ts",
     "migrate": "node-pg-migrate",
     "backfill": "ts-node scripts/backfill.ts",
     "poll": "ts-node scripts/poller.ts",
@@ -50,7 +51,7 @@
   "dependencies": {
     "@bull-board/api": "^9.10.0",
     "@bull-board/express": "^9.10.0",
-    "@xenova/transformers": "^2.17.2",
+    "@huggingface/transformers": "^4.3.0",
     "bcrypt": "^6.0.0",
     "bullmq": "^6.3.4",
     "cheerio": "^1.2.0",

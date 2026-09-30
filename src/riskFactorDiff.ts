@@ -18,12 +18,13 @@ const MIN_CHUNK_CHARS = 150;
 // headroom to raise it if larger units ever prove more useful.
 const MAX_CHUNK_CHARS = 900;
 
-// Known precision floor on both thresholds: the quantized embedding model
-// carries up to ~0.025 of similarity error versus fp32 weights (measured -
-// see src/embeddings.ts). The 0.92 threshold is comparatively safe, since
-// that error shrinks to ~0.001 on genuinely near-identical text, but a pair
-// whose true similarity sits within ~0.025 of 0.60 can land on either side
-// of the 'modified'/'new' line. Treat classifications near 0.60 as
+// These thresholds were set while the embedding model ran quantized, which
+// carried up to ~0.025 of similarity error versus the fp32 weights it uses
+// now (measured - see src/embeddings.ts). That error is gone, but the
+// thresholds were not re-tuned: scores now run up to ~0.022 higher on
+// mid-range pairs, so a pair sitting just below 0.60 before may now land
+// just above it. The 0.92 threshold is comparatively safe (the shift is
+// ~0.008 on near-identical text). Treat classifications near 0.60 as
 // low-confidence rather than authoritative.
 const UNCHANGED_THRESHOLD = 0.92;
 const MODIFIED_THRESHOLD = 0.6;

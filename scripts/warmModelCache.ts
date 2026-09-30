@@ -2,16 +2,16 @@
  * Downloads and caches the sentence-embedding model weights, so a Docker
  * image can bake them in at BUILD time instead of fetching them at runtime.
  *
- * Why this exists: `@xenova/transformers` lazily downloads the model on
- * first use into `node_modules/@xenova/transformers/.cache`. In a container
+ * Why this exists: `@huggingface/transformers` lazily downloads the model on
+ * first use into `node_modules/@huggingface/transformers/.cache`. In a container
  * that directory is ephemeral, so without this step every container recreate
- * would re-download ~23MB, the first risk-factor diff request would block on
+ * would re-download ~90MB, the first risk-factor diff request would block on
  * that download, and the API could not produce a diff at all without
  * outbound network access to Hugging Face.
  *
  * It deliberately calls the real `embedTexts()` rather than reaching for the
  * transformers API directly: that guarantees the weights cached here are
- * exactly the ones production loads (same model id, same quantized build),
+ * exactly the ones production loads (same model id, same fp32 weights),
  * so this can never silently warm the wrong cache entry.
  */
 import { embedTexts } from '../src/embeddings';
