@@ -16,12 +16,17 @@
 
 # ---- base ------------------------------------------------------------------
 # node:24-bookworm-slim, matching local Node 24.15. glibc rather than Alpine
-# on purpose: @xenova/transformers pulls in sharp and onnxruntime-node, whose
-# musl builds are historically fragile. bcrypt alone would have been fine on
-# Alpine (it ships musl prebuilds), but the ~140MB saved is not worth a class
-# of "works locally, breaks in the container" native-module failures.
+# on purpose: @huggingface/transformers pulls in sharp and onnxruntime-node,
+# whose musl builds are historically fragile. bcrypt alone would have been fine
+# on Alpine (it ships musl prebuilds), but the ~140MB saved is not worth a
+# class of "works locally, breaks in the container" native-module failures.
 FROM node:24-bookworm-slim AS base
 WORKDIR /app
+
+# onnxruntime-node's postinstall downloads a ~272MB CUDA provider on Linux x64
+# (not on ARM64, the production VM). Nothing here uses a GPU; skipping keeps
+# x64 builds the same size and removes a download from every `npm ci`.
+ENV ONNXRUNTIME_NODE_INSTALL=skip
 
 
 # ---- deps ------------------------------------------------------------------
@@ -42,13 +47,19 @@ COPY src ./src
 COPY scripts ./scripts
 RUN npm run build
 
-# Download the ~23MB all-MiniLM-L6-v2 weights now, at build time, so the
+# Download the ~90MB fp32 all-MiniLM-L6-v2 weights now, at build time, so the
 # running container never reaches out to Hugging Face. Without this the first
 # risk-factor diff in a fresh container would block on a download, every
 # container recreate would re-download, and the API could not diff at all
 # without outbound internet access. Runs the compiled script (not ts-node) so
 # it exercises the same code path the runtime image will.
 RUN node dist/scripts/warmModelCache.js
+
+# Fail the build if the embeddings no longer match the reference similarities
+# riskFactorDiff was calibrated against (see scripts/checkEmbeddings.ts). This
+# runs on the architecture the image is built for, so the production VM checks
+# its own ARM64 output.
+RUN node dist/scripts/checkEmbeddings.js
 
 
 # ---- migrator --------------------------------------------------------------
@@ -72,13 +83,20 @@ ENV NODE_ENV=production
 # is honoured exactly - an image that resolves different versions than the
 # lockfile says is not a reproducible build.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+#
+# onnxruntime-node ships native binaries for every OS and CPU (~290MB); only
+# this image's own linux/<arch> directory is ever loaded, so the rest go.
+RUN npm ci --omit=dev && npm cache clean --force \
+ && ORT_BIN=node_modules/onnxruntime-node/bin/napi-v6 \
+ && KEEP="linux/$(node -p process.arch)" \
+ && test -f "$ORT_BIN/$KEEP/onnxruntime_binding.node" \
+ && find "$ORT_BIN" -mindepth 2 -maxdepth 2 -type d ! -path "$ORT_BIN/$KEEP" -exec rm -rf {} +
 
 COPY --from=build /app/dist ./dist
 
-# The model weights warmed above. @xenova/transformers is a production
+# The model weights warmed above. @huggingface/transformers is a production
 # dependency, so this target directory already exists in the runtime tree.
-COPY --from=build /app/node_modules/@xenova/transformers/.cache ./node_modules/@xenova/transformers/.cache
+COPY --from=build /app/node_modules/@huggingface/transformers/.cache ./node_modules/@huggingface/transformers/.cache
 
 # The 196-company universe and the migration files. Neither the API nor the
 # three workers read data/ today (only poller/backfill/reconciliation do), but

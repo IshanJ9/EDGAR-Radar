@@ -30,6 +30,12 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# onnxruntime-node's postinstall downloads a ~272MB CUDA provider on Linux
+# x64, which is what these runners are. Nothing here has a GPU, so every
+# `npm ci` would fetch it for nothing. The same skip is set in the Dockerfile.
+env:
+  ONNXRUNTIME_NODE_INSTALL: skip
+
 jobs:
   lint:
     runs-on: ubuntu-latest
