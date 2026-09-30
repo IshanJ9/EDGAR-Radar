@@ -19,6 +19,9 @@ jest.mock('../repositories/failingCompanyRepository', () => ({
   isQuarantined: jest.fn(async () => false),
   recordFailure: jest.fn(async () => undefined),
 }));
+jest.mock('../repositories/companyRepository', () => ({
+  updateCompanyIndustry: jest.fn(async () => undefined),
+}));
 jest.mock('../repositories/pollerRepository', () => ({
   getLastCheckedAt: jest.fn(),
   setLastCheckedAt: jest.fn(),
@@ -32,6 +35,7 @@ jest.mock('../repositories/pollerRepository', () => ({
 import { fetchSubmissions } from '../sec';
 import { filingDiscoveredQueue } from '../queues';
 import * as pollerRepository from '../repositories/pollerRepository';
+import { updateCompanyIndustry } from '../repositories/companyRepository';
 import { runPollCycle } from '../poller';
 
 const APPLE = { cik: '0000320193', ticker: 'AAPL', name: 'Apple Inc.' };
@@ -58,6 +62,8 @@ function world(startIso: string) {
     if (failingCiks.has(cik)) throw new Error('Request failed with status 503.');
     const list = filings.get(cik) ?? [];
     return {
+      sic: cik === APPLE.cik ? '3571' : '6021',
+      sicDescription: cik === APPLE.cik ? 'Electronic Computers' : 'National Commercial Banks',
       filings: {
         recent: {
           accessionNumber: list.map((f) => f.accn),
@@ -206,4 +212,24 @@ test('a failed company check holds the cursor, and the re-check does not enqueue
   await w.cycle();
 
   expect(w.enqueued).toEqual(['0000320193-26-000100', '0000789019-26-000200']);
+});
+
+// F1b: the industry comes from the submissions document the poller already
+// downloads for every company every cycle - no extra SEC request.
+test('records each company’s industry from the submissions it already fetched', async () => {
+  const w = world('2026-09-28T13:30:00Z');
+  await w.cycle();
+
+  expect(updateCompanyIndustry).toHaveBeenCalledWith(APPLE.cik, '3571', 'Electronic Computers');
+  expect(updateCompanyIndustry).toHaveBeenCalledWith(MSFT.cik, '6021', 'National Commercial Banks');
+  expect(fetchSubmissions).toHaveBeenCalledTimes(2);
+});
+
+test('a failed company check records no industry for it', async () => {
+  const w = world('2026-09-28T13:30:00Z');
+  w.failChecksFor(MSFT.cik, true);
+  await w.cycle();
+
+  expect(updateCompanyIndustry).toHaveBeenCalledTimes(1);
+  expect(updateCompanyIndustry).toHaveBeenCalledWith(APPLE.cik, '3571', 'Electronic Computers');
 });

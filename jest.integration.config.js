@@ -9,7 +9,7 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   testMatch: ['**/*.integration.test.ts'],
-  testPathIgnorePatterns: ['/node_modules/', '/dist/'],
+  testPathIgnorePatterns: ['/node_modules/', '/dist/', '<rootDir>/.claude/'],
   setupFiles: ['<rootDir>/jest.setup.ts'],
   testTimeout: 30000,
   // Integration suites share one real Postgres instance and truncate

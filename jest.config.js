@@ -15,6 +15,9 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   testMatch: ['**/*.test.ts'],
-  testPathIgnorePatterns: ['/node_modules/', '/dist/', '\\.integration\\.test\\.ts$'],
+  // `.claude/`: Claude Code keeps git worktrees there, each a full copy of
+  // src/ - without this, local runs execute every test twice (gitignored, so
+  // CI never sees it).
+  testPathIgnorePatterns: ['/node_modules/', '/dist/', '\\.integration\\.test\\.ts$', '<rootDir>/.claude/'],
   setupFiles: ['<rootDir>/jest.setup.ts'],
 };

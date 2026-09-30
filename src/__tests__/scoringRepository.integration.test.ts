@@ -28,10 +28,11 @@ async function seedFact(opts: {
   form?: string;
   fiscalPeriod?: string;
   periodEnd?: string;
+  periodStart?: string;
 }): Promise<void> {
   await pool.query(
-    `INSERT INTO filing_facts (cik, tag, unit, value, period_end, fiscal_year, fiscal_period, form, accn, filed_date, effective_from)
-     VALUES ($1, $2, 'USD', $3, $4, $5, $6, $7, $8, $9, $9)`,
+    `INSERT INTO filing_facts (cik, tag, unit, value, period_end, fiscal_year, fiscal_period, form, accn, filed_date, effective_from, period_start)
+     VALUES ($1, $2, 'USD', $3, $4, $5, $6, $7, $8, $9, $9, $10)`,
     [
       opts.cik,
       opts.tag,
@@ -42,6 +43,7 @@ async function seedFact(opts: {
       opts.form ?? '10-K',
       opts.accn,
       opts.effectiveFrom,
+      opts.periodStart ?? null,
     ],
   );
 }
@@ -110,6 +112,30 @@ describe('getAnnualValues', () => {
 
     const result = await getAnnualValues(CIK, ['Assets'], 2);
     expect(result).toEqual([{ fiscalYear: 2024, value: 100 }]);
+  });
+
+  // Post-Phase 7 hardening, step 3 (F1b).
+  test('uses only the tag with the most recent year - never one year from each of two tags', async () => {
+    await seedCompany(CIK);
+    // A tag the company stopped using, with an older year, alongside the one it reports now.
+    await seedFact({ cik: CIK, tag: 'LongTermDebt', value: 1, fiscalYear: 2023, accn: 'old', effectiveFrom: '2024-02-01' });
+    await seedFact({ cik: CIK, tag: 'LongTermDebtNoncurrent', value: 50, fiscalYear: 2025, accn: 'b', effectiveFrom: '2026-02-01' });
+    await seedFact({ cik: CIK, tag: 'LongTermDebtNoncurrent', value: 40, fiscalYear: 2024, accn: 'a', effectiveFrom: '2025-02-01' });
+
+    const values = await getAnnualValues(CIK, ['LongTermDebt', 'LongTermDebtNoncurrent'], 3);
+
+    expect(values).toEqual([
+      { fiscalYear: 2025, value: 50 },
+      { fiscalYear: 2024, value: 40 },
+    ]);
+  });
+
+  test('ignores a quarter reported inside a 10-K (fiscal_period FY, but three months long)', async () => {
+    await seedCompany(CIK);
+    await seedFact({ cik: CIK, tag: 'Revenues', value: 400, fiscalYear: 2025, accn: 'y', effectiveFrom: '2025-11-01', periodStart: '2024-09-29', periodEnd: '2025-09-27' });
+    await seedFact({ cik: CIK, tag: 'Revenues', value: 100, fiscalYear: 2025, accn: 'q', effectiveFrom: '2025-11-02', periodStart: '2025-06-29', periodEnd: '2025-09-27' });
+
+    expect(await getAnnualValues(CIK, ['Revenues'], 2)).toEqual([{ fiscalYear: 2025, value: 400 }]);
   });
 
   test('returns an empty array when the company has no data for any candidate tag', async () => {

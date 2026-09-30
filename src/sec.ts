@@ -76,6 +76,9 @@ export async function fetchCompanyFacts(cik: string): Promise<any> {
 }
 
 export interface SecSubmissions {
+  /** Standard Industrial Classification code and description, e.g. "6021", "National Commercial Banks". */
+  sic?: string;
+  sicDescription?: string;
   filings: {
     recent: {
       accessionNumber: string[];
@@ -205,28 +208,56 @@ export const SGA_TAGS = ['SellingGeneralAndAdministrativeExpense'];
 export interface AnnualFactResult {
   tag: string;
   unit: 'USD' | 'shares';
-  facts: UsGaapFact[]; // most recent `count` distinct fiscal years, descending by fy
+  facts: UsGaapFact[]; // most recent `count` fiscal years, newest first; `fy` is the period's own fiscal year
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The fiscal year a period belongs to: the calendar year its period ends in
+ * (Apple's year ending 2025-09-27 is fiscal 2025, Walmart's ending 2026-01-31
+ * is fiscal 2026). NOT SEC's `fy` field, which is the fiscal year of the
+ * filing that reported the value - see annualFacts.
+ */
+export function fiscalYearOfPeriod(end: string): number {
+  return Number(end.slice(0, 4));
+}
+
+/** A balance-sheet value (no start) or a duration of roughly a year - not a quarter reported inside a 10-K. */
+function coversAFullYear(fact: UsGaapFact): boolean {
+  if (!fact.start) return true;
+  const days = (Date.parse(fact.end) - Date.parse(fact.start)) / DAY_MS;
+  return days >= 330 && days <= 400;
 }
 
 /**
- * Returns up to `count` most recent distinct-fiscal-year *annual* (form
- * 10-K, fp 'FY') values for whichever candidate tag (tried in priority
- * order) actually has enough annual history. Unlike `mostRecentFact`, this
- * never returns a quarterly/10-Q figure - that matters here because the
- * ratio-score formulas compare one full fiscal year against another, and
- * mixing in a partial-year figure would silently corrupt the ratio.
+ * Returns up to `count` most recent *annual* values (form 10-K, fp 'FY', a
+ * full year) for one of the candidate tags, newest first. Unlike
+ * `mostRecentFact`, this never returns a quarterly figure - the ratio-score
+ * formulas compare one full fiscal year against another, and a partial year
+ * would silently corrupt the ratio.
  *
- * Tags are tried independently rather than merged across a single result,
- * since two different tags aren't guaranteed to mean exactly the same
- * thing - mixing e.g. `LongTermDebt` for one year with
- * `LongTermDebtNoncurrent` for another (a real pattern seen in Tesla's own
- * data) could silently produce an invalid comparison.
+ * Values are chosen by the PERIOD they cover (their `end` date), and each
+ * returned fact's `fy` is replaced with that period's fiscal year. SEC's own
+ * `fy` is the fiscal year of the filing: every 10-K restates earlier years
+ * (three years of income, two balance sheets) under its own `fy`. Keeping one
+ * value per SEC `fy` - as this did until post-Phase 7 hardening, step 3 -
+ * stored Apple's "fiscal 2025" revenue as the year ended September 2023 and
+ * never stored 2024 or 2025 at all, so every score paired stale, mismatched
+ * years. A period reported by several 10-Ks keeps the most recently filed
+ * value, so a restatement wins.
  *
- * `maxFiscalYear`, when given, restricts the pool to fiscal years at or
- * before it before taking the most recent `count` - added for Phase 5's
- * back-testing step, which needs a specific *historical* fiscal-year pair
- * (e.g. the two years surrounding a known accounting irregularity), not
- * whatever is most recent as of today.
+ * Tags are never mixed within a result: two tags aren't guaranteed to mean
+ * the same thing (mixing `LongTermDebt` for one year with
+ * `LongTermDebtNoncurrent` for another, a real pattern in Tesla's data,
+ * would silently produce an invalid comparison). Among the tags with at least
+ * `minimum` years, the one with the most recent period wins, then priority
+ * order - so a tag a company stopped using years ago can no longer shadow the
+ * one it reports today (JPMorgan's stored long-term debt was from 2011-12).
+ *
+ * `maxFiscalYear`, when given, restricts to periods in fiscal years at or
+ * before it - for Phase 5's back-testing, which needs a specific historical
+ * pair of years.
  */
 export function annualFacts(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same untyped raw companyfacts JSON as fetchCompanyFacts above.
@@ -235,27 +266,33 @@ export function annualFacts(
   unit: 'USD' | 'shares',
   count: number,
   maxFiscalYear?: number,
+  minimum: number = Math.min(count, 2),
 ): AnnualFactResult | null {
+  let best: AnnualFactResult | null = null;
+
   for (const tag of tags) {
     const values: UsGaapFact[] | undefined = companyFacts?.facts?.['us-gaap']?.[tag]?.units?.[unit];
     if (!Array.isArray(values) || values.length === 0) continue;
 
-    const annualByFiscalYear = new Map<number, UsGaapFact>();
+    const byPeriodEnd = new Map<string, UsGaapFact>();
     for (const fact of values) {
-      if (fact.form !== '10-K' || fact.fp !== 'FY') continue;
-      if (maxFiscalYear !== undefined && fact.fy > maxFiscalYear) continue;
-      const existing = annualByFiscalYear.get(fact.fy);
-      // A later 10-K can restate a prior fiscal year's figure - prefer
-      // whichever was filed most recently for that fiscal year.
-      if (!existing || fact.filed > existing.filed) {
-        annualByFiscalYear.set(fact.fy, fact);
-      }
+      if (fact.form !== '10-K' || fact.fp !== 'FY' || !coversAFullYear(fact)) continue;
+      if (maxFiscalYear !== undefined && fiscalYearOfPeriod(fact.end) > maxFiscalYear) continue;
+      const existing = byPeriodEnd.get(fact.end);
+      if (!existing || fact.filed > existing.filed) byPeriodEnd.set(fact.end, fact);
     }
 
-    if (annualByFiscalYear.size < count) continue;
+    // Newest period first; one per fiscal year (a changed year-end can put
+    // two period ends in one calendar year - the later one stands).
+    const facts: UsGaapFact[] = [];
+    for (const fact of [...byPeriodEnd.values()].sort((a, b) => b.end.localeCompare(a.end))) {
+      const fy = fiscalYearOfPeriod(fact.end);
+      if (facts.length === 0 || facts[facts.length - 1]!.fy !== fy) facts.push({ ...fact, fy });
+    }
 
-    const sorted = [...annualByFiscalYear.values()].sort((a, b) => b.fy - a.fy);
-    return { tag, unit, facts: sorted.slice(0, count) };
+    if (facts.length < minimum) continue;
+    if (!best || facts[0]!.end > best.facts[0]!.end) best = { tag, unit, facts };
   }
-  return null;
+
+  return best && { ...best, facts: best.facts.slice(0, count) };
 }

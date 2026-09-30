@@ -23,6 +23,7 @@ import {
   DEPRECIATION_TAGS,
   SGA_TAGS,
   UsGaapFact,
+  fiscalYearOfPeriod,
 } from '../sec';
 import { validateFact } from '../dataQuality';
 
@@ -51,7 +52,9 @@ const ANNUAL_FACT_CONCEPTS: { tags: string[]; unit: 'USD' | 'shares' }[] = [
   { tags: DEPRECIATION_TAGS, unit: 'USD' },
   { tags: SGA_TAGS, unit: 'USD' },
 ];
-const ANNUAL_HISTORY_YEARS = 2;
+// Five years, not the two a score needs (post-Phase 7 hardening, step 3):
+// enough for the frontend's charts to show a trend.
+const ANNUAL_HISTORY_YEARS = 5;
 
 async function upsertCompany(cik: string, entityName: string): Promise<void> {
   await pool.query(
@@ -101,12 +104,20 @@ export async function upsertFact(cik: string, tag: string, fact: UsGaapFact, uni
   // filing (same accn) still idempotently updates that one row rather than
   // duplicating it. effective_from records when this value became the
   // known-true figure (the filing's own filed date).
+  //
+  // An annual 10-K value is labelled with the fiscal year of its PERIOD, not
+  // SEC's `fy` (the fiscal year of the filing, which a 10-K's comparative
+  // columns share - see annualFacts in sec.ts). Every path that stores a 10-K
+  // value goes through here, so the label is right whichever one stored it,
+  // and a re-ingest corrects a row stored under the old label.
+  const fiscalYear = fact.form === '10-K' && fact.fp === 'FY' ? fiscalYearOfPeriod(fact.end) : fact.fy;
   await pool.query(
     `INSERT INTO filing_facts (cik, tag, unit, value, period_start, period_end, fiscal_year, fiscal_period, form, accn, filed_date, effective_from)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
      ON CONFLICT (cik, tag, unit, period_end, COALESCE(period_start, '0001-01-01'), accn)
-     DO UPDATE SET value = EXCLUDED.value, form = EXCLUDED.form, filed_date = EXCLUDED.filed_date, updated_at = now()`,
-    [cik, tag, unit, fact.val, fact.start ?? null, fact.end, fact.fy, fact.fp, fact.form, fact.accn, fact.filed],
+     DO UPDATE SET value = EXCLUDED.value, form = EXCLUDED.form, filed_date = EXCLUDED.filed_date,
+                   fiscal_year = EXCLUDED.fiscal_year, updated_at = now()`,
+    [cik, tag, unit, fact.val, fact.start ?? null, fact.end, fiscalYear, fact.fp, fact.form, fact.accn, fact.filed],
   );
   // Called directly by reconciliation as well as by upsertCompanyFacts, so it
   // invalidates for itself. (A quarantined fact returns above without
@@ -152,12 +163,41 @@ export async function upsertCompanyFacts(cik: string): Promise<{ cik: string; en
 export interface CompanyRecord {
   cik: string;
   entityName: string;
+  /** SEC's industry description, e.g. "National Commercial Banks"; null until the poller has seen the company. */
+  industry: string | null;
 }
 
 export async function getCompanyByCik(cik: string, db: Queryable = pool): Promise<CompanyRecord | null> {
-  const result = await db.query('SELECT cik, entity_name FROM companies WHERE cik = $1', [padCik(cik)]);
+  const result = await db.query('SELECT cik, entity_name, sic_description FROM companies WHERE cik = $1', [padCik(cik)]);
   if (result.rows.length === 0) return null;
-  return { cik: result.rows[0].cik, entityName: result.rows[0].entity_name };
+  return { cik: result.rows[0].cik, entityName: result.rows[0].entity_name, industry: result.rows[0].sic_description ?? null };
+}
+
+/**
+ * Records a company's industry (post-Phase 7 hardening, step 3, F1b), from the
+ * submissions document the poller already downloads every cycle. Writes - and
+ * clears the cached company responses - only when it actually changed, so
+ * 196 checks every 30 minutes cost 196 no-op UPDATEs, not 196 cache clears.
+ * A company not stored yet is left alone.
+ */
+export async function updateCompanyIndustry(cik: string, sic: string, sicDescription: string): Promise<void> {
+  const paddedCik = padCik(cik);
+  const result = await pool.query(
+    `UPDATE companies SET sic = $2, sic_description = $3, updated_at = now()
+     WHERE cik = $1 AND (sic IS DISTINCT FROM $2 OR sic_description IS DISTINCT FROM $3)`,
+    [paddedCik, sic, sicDescription],
+  );
+  if (result.rowCount) {
+    await responseCache.invalidate(cacheKeys.company(paddedCik), cacheKeys.facts(paddedCik));
+  }
+}
+
+/** Every stored company's industry, by padded CIK - for the company list. */
+export async function getIndustries(db: Queryable = pool): Promise<Map<string, string>> {
+  const result = await db.query<{ cik: string; sic_description: string }>(
+    'SELECT cik, sic_description FROM companies WHERE sic_description IS NOT NULL',
+  );
+  return new Map(result.rows.map((row) => [row.cik, row.sic_description]));
 }
 
 export interface FactRecord {

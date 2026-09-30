@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { CompanyFactsNotFoundError, padCik } from '../sec';
 import { pool, Queryable, readDb } from '../db';
-import { CompanyRecord, getCompanyByCik, getFactsByCik, upsertCompanyFacts } from '../repositories/companyRepository';
+import { CompanyRecord, getCompanyByCik, getFactsByCik, getIndustries, upsertCompanyFacts } from '../repositories/companyRepository';
 import { getOrComputeRiskFactorDiff } from '../riskFactorDiffService';
 import { cacheKeys } from '../cache';
 import { sendAndCache, sendIfCached } from './cachedResponse';
@@ -51,6 +51,7 @@ export async function getOrFetchCompany(cik: string): Promise<{ company: Company
 router.get('/', async (req, res) => {
   if (await sendIfCached(res, cacheKeys.companyList)) return;
   try {
+    const industries = await getIndustries(readDb);
     const companies = await Promise.all(
       loadUniverse().map(async ({ cik, ticker, name }) => {
         const scores = await computeCompanyScores(cik);
@@ -58,6 +59,7 @@ router.get('/', async (req, res) => {
           cik,
           ticker,
           name,
+          industry: industries.get(cik) ?? null,
           ratings: {
             altmanZ: summarizeScore(scores.altmanZ),
             piotroskiF: summarizeScore(scores.piotroskiF),
