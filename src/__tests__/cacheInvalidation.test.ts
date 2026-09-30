@@ -48,10 +48,14 @@ function calledAfter(later: jest.Mock, earlier: jest.Mock): boolean {
 }
 
 describe('upsertFact', () => {
-  test('invalidates the facts response and everything scored from facts, after the row is written', async () => {
+  test("invalidates the company's facts and scores, after the row is written - but not the 196-company list", async () => {
     await upsertFact('0000320193', 'Revenues', VALID_FACT);
 
-    expect(invalidate).toHaveBeenCalledWith(cacheKeys.facts('0000320193'), cacheKeys.scores('0000320193'), cacheKeys.companyList);
+    // Clearing the list on every fact write kept it permanently cold in
+    // production: the parser worker writes facts for every filing it
+    // processes, so the list (1.5-2.2 s to rebuild) was cleared every few
+    // seconds on a busy day. It expires with the TTL instead.
+    expect(invalidate).toHaveBeenCalledWith(cacheKeys.facts('0000320193'), cacheKeys.scores('0000320193'));
     expect(calledAfter(invalidate, query)).toBe(true);
   });
 

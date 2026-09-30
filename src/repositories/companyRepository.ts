@@ -110,9 +110,12 @@ export async function upsertFact(cik: string, tag: string, fact: UsGaapFact, uni
   );
   // Called directly by reconciliation as well as by upsertCompanyFacts, so it
   // invalidates for itself. (A quarantined fact returns above without
-  // touching filing_facts, so it has nothing to invalidate.) Scores and the
-  // company list's ratings are computed from facts, so they go too.
-  await responseCache.invalidate(cacheKeys.facts(cik), cacheKeys.scores(cik), cacheKeys.companyList);
+  // touching filing_facts, so it has nothing to invalidate.) The company's
+  // scores are computed from its facts, so they go too. The 196-company list
+  // is deliberately NOT cleared here: the parser worker writes facts for every
+  // filing it processes, so on a busy day that kept the list (1.5-2.2 s to
+  // rebuild) permanently cold. Its ratings expire with the TTL instead.
+  await responseCache.invalidate(cacheKeys.facts(cik), cacheKeys.scores(cik));
 }
 
 /**
