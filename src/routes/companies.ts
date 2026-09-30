@@ -1,10 +1,12 @@
 import { Router } from 'express';
-import { CompanyFactsNotFoundError } from '../sec';
+import { CompanyFactsNotFoundError, padCik } from '../sec';
 import { pool, Queryable, readDb } from '../db';
 import { CompanyRecord, getCompanyByCik, getFactsByCik, upsertCompanyFacts } from '../repositories/companyRepository';
 import { getOrComputeRiskFactorDiff } from '../riskFactorDiffService';
 import { cacheKeys } from '../cache';
 import { sendAndCache, sendIfCached } from './cachedResponse';
+import { computeCompanyScores, summarizeScore } from '../companyScores';
+import { loadUniverse } from '../universe';
 
 const router = Router();
 
@@ -40,6 +42,65 @@ export async function getOrFetchCompany(cik: string): Promise<{ company: Company
   await upsertCompanyFacts(cik);
   return { company: await getCompanyByCik(cik, pool), db: pool };
 }
+
+/**
+ * Every monitored company with a summary of its three scores - the
+ * frontend's search list and all-companies table (post-Phase 7 hardening,
+ * step 3). Reads stored facts only: it never fetches from SEC.
+ */
+router.get('/', async (req, res) => {
+  if (await sendIfCached(res, cacheKeys.companyList)) return;
+  try {
+    const companies = await Promise.all(
+      loadUniverse().map(async ({ cik, ticker, name }) => {
+        const scores = await computeCompanyScores(cik);
+        return {
+          cik,
+          ticker,
+          name,
+          ratings: {
+            altmanZ: summarizeScore(scores.altmanZ),
+            piotroskiF: summarizeScore(scores.piotroskiF),
+            beneishM: summarizeScore(scores.beneishM),
+          },
+        };
+      }),
+    );
+    sendAndCache(res, cacheKeys.companyList, { count: companies.length, companies });
+  } catch (err) {
+    req.log.error({ err }, 'Failed to list companies');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * The three scores for one company, with their inputs. A company not already
+ * stored is a 404 rather than a fetch from SEC: a visitor must never be able
+ * to spend the SEC rate budget.
+ */
+router.get('/:cik/scores', async (req, res) => {
+  const { cik } = req.params;
+  if (!isValidCik(cik)) {
+    res.status(400).json({ error: 'CIK must be 1-10 digits' });
+    return;
+  }
+
+  const key = cacheKeys.scores(cik);
+  if (await sendIfCached(res, key)) return;
+
+  try {
+    const paddedCik = padCik(cik);
+    const company = (await getCompanyByCik(paddedCik, readDb)) ?? (await getCompanyByCik(paddedCik, pool));
+    if (!company) {
+      res.status(404).json({ error: `No stored company with CIK ${paddedCik}.` });
+      return;
+    }
+    sendAndCache(res, key, { cik: paddedCik, scores: await computeCompanyScores(paddedCik) });
+  } catch (err) {
+    req.log.error({ err }, 'Failed to compute scores');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 router.get('/:cik', async (req, res) => {
   const { cik } = req.params;

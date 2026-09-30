@@ -110,8 +110,9 @@ export async function upsertFact(cik: string, tag: string, fact: UsGaapFact, uni
   );
   // Called directly by reconciliation as well as by upsertCompanyFacts, so it
   // invalidates for itself. (A quarantined fact returns above without
-  // touching filing_facts, so it has nothing to invalidate.)
-  await responseCache.invalidate(cacheKeys.facts(cik));
+  // touching filing_facts, so it has nothing to invalidate.) Scores and the
+  // company list's ratings are computed from facts, so they go too.
+  await responseCache.invalidate(cacheKeys.facts(cik), cacheKeys.scores(cik), cacheKeys.companyList);
 }
 
 /**
