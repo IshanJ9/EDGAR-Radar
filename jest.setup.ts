@@ -31,6 +31,14 @@ process.env.EDGAR_CONTACT_EMAIL ??= 'test-placeholder@example.com';
 process.env.DATABASE_URL ??= 'postgresql://placeholder:placeholder@unit-tests-never-connect.invalid:5432/placeholder';
 
 /**
+ * The same again for JWT_SECRET (post-Phase 7 hardening, step 3): the route
+ * tests import the whole Express app (src/app.ts), which loads the auth
+ * routes, which validate JWT_SECRET at import. A placeholder, never used to
+ * sign anything real.
+ */
+process.env.JWT_SECRET ??= 'unit-test-placeholder-jwt-secret';
+
+/**
  * Phase 6, step 5: structurally enforces ROADMAP.md's "remove any test that
  * hits real SEC" - not as a rule someone has to remember, but as something
  * that makes a real network call fail loudly. `nock`'s per-test interceptors

@@ -50,6 +50,14 @@ export const cacheKeys = {
   company: (cik: string) => `v1:company:${padCik(cik)}`,
   facts: (cik: string) => `v1:facts:${padCik(cik)}`,
   riskFactorDiff: (cik: string) => `v1:risk-factor-diff:${padCik(cik)}`,
+  // Post-Phase 7 hardening, step 3. Both are computed from facts, so a fact
+  // write clears them (upsertFact). The stats and filings feed are written by
+  // the poller and reconciliation instead, which do not invalidate: the TTL
+  // bounds how stale they get.
+  scores: (cik: string) => `v1:scores:${padCik(cik)}`,
+  companyList: 'v1:company-list',
+  stats: 'v1:stats',
+  recentFilings: (hours: number, exclude: string[]) => `v1:recent-filings:${hours}:${exclude.join(',')}`,
 };
 
 /** The three commands the cache needs; an ioredis client satisfies it. */

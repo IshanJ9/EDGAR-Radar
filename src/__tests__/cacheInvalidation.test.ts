@@ -48,10 +48,10 @@ function calledAfter(later: jest.Mock, earlier: jest.Mock): boolean {
 }
 
 describe('upsertFact', () => {
-  test('invalidates the facts response, after the row is written', async () => {
+  test('invalidates the facts response and everything scored from facts, after the row is written', async () => {
     await upsertFact('0000320193', 'Revenues', VALID_FACT);
 
-    expect(invalidate).toHaveBeenCalledWith(cacheKeys.facts('0000320193'));
+    expect(invalidate).toHaveBeenCalledWith(cacheKeys.facts('0000320193'), cacheKeys.scores('0000320193'), cacheKeys.companyList);
     expect(calledAfter(invalidate, query)).toBe(true);
   });
 
