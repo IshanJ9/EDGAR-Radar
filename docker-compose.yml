@@ -353,6 +353,24 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Once a day at 03:00 UTC: dumps the primary database and uploads it off the
+  # host, to Oracle Object Storage (docker/backup/backup.sh). With no
+  # BACKUP_UPLOAD_URL set - a clean checkout - it logs a skip each night and
+  # does nothing else.
+  backup:
+    build:
+      context: docker/backup
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATABASE: ${POSTGRES_DB:-edgar_radar}
+      BACKUP_UPLOAD_URL: ${BACKUP_UPLOAD_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
   pgdata-replica:
