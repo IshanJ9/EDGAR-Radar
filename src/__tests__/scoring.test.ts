@@ -515,4 +515,110 @@ describe('year alignment and derived figures', () => {
     expect(result.status === 'ok' && result.inputs.derived).toEqual([]);
     expect(result.status === 'ok' && reportedOnly.status === 'ok' && result.value).toBe(reportedOnly.status === 'ok' && reportedOnly.value);
   });
+
+  // Post-Phase 7 hardening, step 3 (F1b-3). Found in production: Danaher,
+  // AT&T and T-Mobile stopped reporting total Liabilities in 2010-2015, and a
+  // derivation used to run only when a figure had never been reported at all -
+  // so a stale series blocked a derivation that would have covered every
+  // recent year.
+  test('a stale reported figure does not block its derivation: Altman derives liabilities for the recent year', async () => {
+    fixtureRepository(
+      new Map<string[], AnnualValue[]>([
+        [ASSETS_TAGS, years(2025, 1000)],
+        [CURRENT_ASSETS_TAGS, years(2025, 300)],
+        [CURRENT_LIABILITIES_TAGS, years(2025, 200)],
+        [RETAINED_EARNINGS_TAGS, years(2025, 100)],
+        [OPERATING_INCOME_TAGS, years(2025, 150)],
+        [STOCKHOLDERS_EQUITY_TAGS, years(2025, 400)],
+        [LIABILITIES_TAGS, years(2010, 999)], // last reported in 2010
+      ]),
+    );
+
+    const result = await computeAltmanZDoublePrime('1');
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.inputs.fiscalYear).toBe(2025);
+    expect(result.inputs.totalLiabilities).toBe(600);
+    expect(result.inputs.liabilitiesDerived).toBe(true);
+  });
+
+  test('a stale reported gross profit gives way to one derived from newer parts', async () => {
+    fixtureRepository(beneish([[GROSS_PROFIT_TAGS, years(2024, 400, 300)]]));
+    const current = await computeBeneishMScore('1');
+    fixtureRepository(beneish([[GROSS_PROFIT_TAGS, years(2014, 1, 1)], [COST_OF_REVENUE_TAGS, years(2024, 400, 500)]]));
+
+    const result = await computeBeneishMScore('1');
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok' || current.status !== 'ok') return;
+    expect(result.value).toBe(current.value);
+    expect(result.inputs.derived).toEqual(['grossProfit']);
+  });
+
+  test('the derived series replaces a stale reported one for every year - the two are never mixed', async () => {
+    // Reported gross profit stops a year short (2023 only) and its 2023 value
+    // differs from revenue - cost; the score must use the derived 2023 too.
+    fixtureRepository(beneish([[GROSS_PROFIT_TAGS, undefined], [COST_OF_REVENUE_TAGS, years(2024, 400, 500)]]));
+    const allDerived = await computeBeneishMScore('1');
+    fixtureRepository(beneish([[GROSS_PROFIT_TAGS, years(2023, 777)], [COST_OF_REVENUE_TAGS, years(2024, 400, 500)]]));
+
+    const result = await computeBeneishMScore('1');
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok' || allDerived.status !== 'ok') return;
+    expect(result.value).toBe(allDerived.value);
+  });
+
+  test('reported and derived years are not combined to make a pair neither has on its own', async () => {
+    // Derived gross profit covers only 2024 and the reported one only 2023:
+    // mixing them would make a 2024/2023 pair, so the score must refuse.
+    fixtureRepository(beneish([[GROSS_PROFIT_TAGS, years(2023, 300)], [COST_OF_REVENUE_TAGS, years(2024, 400)]]));
+
+    const result = await computeBeneishMScore('1');
+
+    expect(result).toEqual({ status: 'insufficient-history', reason: expect.stringContaining('grossProfit') });
+  });
+
+  test('a stale reported figure is kept when its parts are no newer', async () => {
+    // Every other figure reaches 2024; gross profit and its parts stop at 2023.
+    const three = (v: number) => years(2024, v, v, v);
+    fixtureRepository(
+      beneish([
+        [ASSETS_TAGS, three(1000)],
+        [CURRENT_ASSETS_TAGS, three(300)],
+        [CURRENT_LIABILITIES_TAGS, three(200)],
+        [LONG_TERM_DEBT_TAGS, three(100)],
+        [OPERATING_CASH_FLOW_TAGS, three(100)],
+        [NET_INCOME_TAGS, three(100)],
+        [REVENUE_TAGS, three(800)],
+        [RECEIVABLES_TAGS, three(80)],
+        [PPE_TAGS, three(200)],
+        [DEPRECIATION_TAGS, three(50)],
+        [SGA_TAGS, three(100)],
+        [GROSS_PROFIT_TAGS, years(2023, 400, 300)],
+        [COST_OF_REVENUE_TAGS, years(2023, 100, 700)],
+      ]),
+    );
+
+    const result = await computeBeneishMScore('1');
+
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.inputs.fiscalYearCurrent).toBe(2023);
+    expect(result.inputs.derived).toEqual([]);
+  });
+
+  test('the parts are not even read when the reported figure is as recent as every other figure', async () => {
+    // The 196-company list scores every company on a cold cache, so a
+    // derivation that cannot help must not cost queries.
+    fixtureRepository(beneish());
+
+    await computeBeneishMScore('1');
+
+    const tagsRead = mockedGetAnnualValues.mock.calls.map(([, tags]) => tags);
+    expect(tagsRead).not.toContain(COST_OF_REVENUE_TAGS);
+    expect(tagsRead).not.toContain(SELLING_MARKETING_TAGS);
+    expect(tagsRead).not.toContain(GENERAL_ADMIN_TAGS);
+  });
 });

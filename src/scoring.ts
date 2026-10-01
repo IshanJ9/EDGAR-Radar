@@ -48,10 +48,23 @@ function combineByYear(a: AnnualValue[], b: AnnualValue[], combine: (x: number, 
   return a.filter((v) => byYear.has(v.fiscalYear)).map((v) => ({ fiscalYear: v.fiscalYear, value: combine(v.value, byYear.get(v.fiscalYear)!) }));
 }
 
+/** The newest fiscal year in a series, or -Infinity for an empty one. */
+function newestYear(values: AnnualValue[]): number {
+  return Math.max(-Infinity, ...values.map((v) => v.fiscalYear));
+}
+
 /**
- * Derives a concept the company doesn't report from two it does (post-Phase 7
- * hardening, step 3, F1b-2) - only when the reported series is empty, never
- * mixed with it - and records the derivation in `derived`.
+ * Derives a concept from two the company does report (post-Phase 7
+ * hardening, step 3, F1b-2), and records the derivation in `derived`.
+ *
+ * The derived series is used when it reaches a newer year than the reported
+ * one - not only when nothing is reported (F1b-3: Danaher, AT&T and T-Mobile
+ * last reported total liabilities in 2010-2015, and that stale series used to
+ * block a derivation covering every recent year). Like the freshest-tag rule
+ * in sec.ts, the winner is used for every year: reported and derived values
+ * are never mixed. The parts are read only when the reported series is behind
+ * the newest year some other figure has - otherwise no derivation could give
+ * a newer common year, and the cold company list would pay for the queries.
  */
 async function deriveIfMissing(
   series: Record<string, AnnualValue[]>,
@@ -60,10 +73,16 @@ async function deriveIfMissing(
   parts: () => Promise<[AnnualValue[], AnnualValue[]]>,
   combine: (x: number, y: number) => number,
 ): Promise<void> {
-  if ((series[key]?.length ?? 0) > 0) return;
+  const reported = series[key] ?? [];
+  const newestElsewhere = Math.max(
+    ...Object.entries(series)
+      .filter(([k]) => k !== key)
+      .map(([, v]) => newestYear(v)),
+  );
+  if (reported.length > 0 && newestYear(reported) >= newestElsewhere) return;
   const [a, b] = await parts();
   const combined = combineByYear(a, b, combine);
-  if (combined.length > 0) {
+  if (newestYear(combined) > newestYear(reported)) {
     series[key] = combined;
     derived.push(key);
   }
