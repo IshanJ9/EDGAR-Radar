@@ -33,6 +33,7 @@ Don't deviate from these without asking first:
 - Queue (from Phase 4 onward, not before): Redis + BullMQ
 - Cloud (from Phase 6 onward, not before): Azure — changed from an original AWS plan at Phase 6 step 8 (the user has an Azure account, not AWS; Phase 3's real-world 48h validation was already running on a separate Azure VM). See PROGRESS.md for the full reasoning and the AWS→Azure service mapping.
 - Testing: Jest + Supertest; `nock` for mocking external HTTP calls
+- Frontend (`web/`, from post-Phase 7 hardening step 3, F2): React + Vite + TypeScript + Tailwind (+ Recharts for charts), hosted on Vercel's free Hobby plan. Its tests use **Vitest** + Testing Library — approved by the user on 2026-10-01 as the one exception to Jest, because Vitest runs on the same Vite config the site builds with. The backend stays on Jest.
 
 ## Explicit "do not use yet"
 Check the relevant phase in `ROADMAP.md` before introducing any of:

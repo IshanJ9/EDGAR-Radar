@@ -145,6 +145,8 @@ npm install
 npm test                  # 262 unit tests; no network, SEC is mocked with nock
 npm run test:integration  # 35 tests against a throwaway Postgres in Docker
 npm run lint
+
+cd web && npm test        # 35 frontend tests (Vitest + Testing Library); no network
 ```
 
 ---
@@ -167,6 +169,7 @@ src/
 scripts/            Entry points: workers, poller, reconciliation, heartbeat, backfill, backtest, load test
 migrations/         Database schema (node-pg-migrate)
 docker/             Postgres replica setup, backup job
+web/                The website (React + Vite + Tailwind), hosted on Vercel; /api is proxied to the API
 ```
 
 ---

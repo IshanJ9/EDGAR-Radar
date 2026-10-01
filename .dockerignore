@@ -23,6 +23,9 @@ build
 *.log
 logs
 
+# The frontend: built and hosted by Vercel, never part of the API image.
+web
+
 # Project docs and planning files - not needed at runtime.
 *.md
 docs

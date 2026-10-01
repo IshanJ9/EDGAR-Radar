@@ -81,6 +81,26 @@ jobs:
       - run: npm ci
       - run: npm run test:integration
 
+  # The frontend (post-Phase 7 hardening, step 3, F2). Its own lockfile and
+  # tools: oxlint, Vitest, then the production build Vercel will run. Vercel
+  # deploys the site itself, so this job gates merging, not the API deploy.
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
   deploy:
     # Every check must pass first. This is the "a failing-test PR can't reach
     # prod" guarantee expressed as a dependency rather than as a convention.

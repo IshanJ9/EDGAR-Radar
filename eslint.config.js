@@ -12,7 +12,8 @@ const globals = require('globals');
  */
 module.exports = tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.cache/**', 'migrations/**', '.claude/**'],
+    // `web/`: the frontend lints itself with oxlint (web/package.json).
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.cache/**', 'migrations/**', '.claude/**', 'web/**'],
   },
   eslint.configs.recommended,
   {
