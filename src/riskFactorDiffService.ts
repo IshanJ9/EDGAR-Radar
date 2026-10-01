@@ -1,11 +1,12 @@
 import { pool, readDb } from './db';
 import { padCik, fetchSubmissions, findRecentFilings, SubmissionsNotFoundError } from './sec';
 import { diffRiskFactorFilings } from './riskFactorDiff';
-import { ingestFilingText, getFilingTextsByAccn } from './repositories/filingTextRepository';
+import { ingestFilingText, getFilingTextsByAccn, getLatestFilingTexts } from './repositories/filingTextRepository';
 import {
   getLatestRiskFactorDiff,
   hasRiskFactorDiff,
   upsertRiskFactorDiff,
+  deleteRiskFactorDiff,
   StoredRiskFactorDiff,
 } from './repositories/riskFactorDiffRepository';
 
@@ -72,6 +73,29 @@ export async function computeLatestRiskFactorDiff(cik: string): Promise<RiskFact
   const result = await diffRiskFactorFilings(texts.get(pair.priorAccn)!.content, texts.get(pair.currentAccn)!.content);
   if (!result) return { status: 'not-extractable', ...pair };
 
+  await upsertRiskFactorDiff(paddedCik, pair.currentAccn, newer.filingDate, pair.priorAccn, older.filingDate, result);
+  return { status: 'computed', ...pair };
+}
+
+/**
+ * Recomputes a company's diff from its two latest STORED 10-K texts - no SEC
+ * request - after a change to how diffs are made (post-Phase 7 hardening,
+ * step 3, F1c-2: the Risk Factors extraction fix). If the section no longer
+ * extracts, the stored diff for that pair is deleted: a diff of the wrong
+ * text is worse than none, and the API then answers 404 honestly.
+ */
+export async function recomputeRiskFactorDiffFromStoredTexts(cik: string): Promise<RiskFactorDiffOutcome> {
+  const paddedCik = padCik(cik);
+  const texts = await getLatestFilingTexts(paddedCik, ['10-K'], 2); // newest first
+  if (texts.length < 2) return { status: 'not-enough-history', reason: `${texts.length} 10-K text stored; a comparison needs 2.` };
+  const [newer, older] = texts as [(typeof texts)[0], (typeof texts)[0]];
+  const pair = { currentAccn: newer.accn, priorAccn: older.accn };
+
+  const result = await diffRiskFactorFilings(older.content, newer.content);
+  if (!result) {
+    await deleteRiskFactorDiff(paddedCik, pair.currentAccn, pair.priorAccn);
+    return { status: 'not-extractable', ...pair };
+  }
   await upsertRiskFactorDiff(paddedCik, pair.currentAccn, newer.filingDate, pair.priorAccn, older.filingDate, result);
   return { status: 'computed', ...pair };
 }
