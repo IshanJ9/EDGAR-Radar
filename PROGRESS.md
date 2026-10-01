@@ -1511,7 +1511,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
 
   **Logged, not changed:** an unknown address answers **HTTP 200** with the not-found page drawn by the app, the usual single-page-app "soft 404". Search engines may index such addresses; worth revisiting in F5 (page titles and link previews).
 
-- [ ] Hardening, step 3, F3 — **The company page.** Started 2026-10-02 at the user's go-ahead ("continue" after F2), from the approved mockups (Company, CompanyNoData). Built and tested locally; ticked after deploy and a check on the live site.
+- [x] Hardening, step 3, F3 — **The company page.** Started 2026-10-02 at the user's go-ahead ("continue" after F2), from the approved mockups (Company, CompanyNoData). PR #45; **verified on the live site 2026-10-02** (end of this entry).
 
   **Backend: `GET /companies/:cik/financials`** (src/companyFinancials.ts, the route in src/routes/companies.ts).
   - **Why an endpoint rather than the facts:** the raw facts name each figure by its SEC tag (Apple's revenue is `RevenueFromContractWithCustomerExcludingAssessedTax`, other companies use other tags), and choosing the right one is the scores' existing logic. Repeating it in the browser would have meant two copies of the tag lists to keep in step.
@@ -1560,4 +1560,26 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
     - **Wording:** GE's cards said a score "appears automatically once the figures are filed", which over-promises for a company that stopped reporting operating income. It now says "if the missing figures are filed".
 
   **Next:** deploy (the API gains `/financials`; Vercel rebuilds the site), then check on https://edgar-radar.vercel.app that Apple, JPMorgan, GE and a derived-liabilities company (Danaher) load with real financials, and the bundle is split as built.
+
+  **Verified on the live site (2026-10-02).** CI for merge commit `18fb10d` passed and deployed the API by 19:33 UTC; Vercel serves `index-NVLFpex_.js` and `CompanyPage-D4ZSk1zv.js`, the same files as the local build.
+  - **`/financials` live, through the site's proxy:**
+    - **Apple:** fiscal 2021–2025; latest revenue $416.2B, profit $112.0B, assets $359.2B, liabilities $285.5B (reported), long-term debt $78.3B, operating cash flow $111.5B; filed 2025-10-31. All match its 10-K.
+    - **Danaher:** liabilities $30.9B, **derived**, as F1b-3 intended.
+    - **JPMorgan:** its last long-term-debt figure is from **2013**, so the page, which shows only the latest year's figures, leaves that row out.
+    - **ExxonMobil Holdings:** empty series.
+    - **A company not stored:** 404.
+  - **In a real browser:**
+    - **Apple:** the full page; 10 chart bars; tabs New (3), Removed (19), Reworded (38); no console errors.
+    - **Danaher:** "In short: Danaher Corp has low bankruptcy risk, passes 5 of 9 financial-strength checks and shows no accounting red flags."; Safe / Moderate / None found, with the derived-liabilities note.
+    - **JPMorgan:** the banks explanation; owns $4.4T, owes $4.1T, operating cash flow −$147.8B; "no comparison yet".
+    - **ExxonMobil:** every section in its empty state, without errors.
+    - **The home page** downloads only `index-NVLFpex_.js`: the chart code is not loaded until a company is opened.
+  - **Found on ExxonMobil's page, and fixed** (in the commit after PR #45): its cards read out 7–12 missing figures in one sentence, and one appeared as the code name "cfo". The scoring code calls operating cash flow `cfo`; my plain-English list had `operatingCashFlow`, which it never uses. Now:
+    - `cfo` reads "cash from operations";
+    - more than three missing figures become "most of what it needs isn't reported yet";
+    - a test checks that every figure name the scoring code uses comes out as English.
+
+    Two tests, red first; **73/73** frontend tests; lint clean.
+  - **Logged, not changed:** a company with no stored risk comparison gets the API's expected 404, which browsers log in the developer console as "Failed to load resource: 404". Visitors never see it, and the page handles it as designed.
+  - **Still open from the mockup, not built:** the "latest quarter" box, "last checked N minutes ago", and a header search on company pages.
 

@@ -8,7 +8,7 @@ It runs unattended in production, around the clock, at **$0/month**.
 
 > **New to this?** Read the [plain-English explanation](docs/edgar-radar-explained.md). No technical background needed.
 
-**Live site:** [edgar-radar.vercel.app](https://edgar-radar.vercel.app) - search any of the 196 companies. The company pages are being built; see [Status](#status).
+**Live site:** [edgar-radar.vercel.app](https://edgar-radar.vercel.app) - search any of the 196 companies for a plain-English health check, five years of finances and what changed in its risk warnings, e.g. [Apple](https://edgar-radar.vercel.app/company/AAPL).
 
 **Live API:** [`http://80.225.253.10:3000/companies/0000320193/facts`](http://80.225.253.10:3000/companies/0000320193/facts) (Apple's financial facts).
 
@@ -149,7 +149,7 @@ npm test                  # 270 unit tests; no network, SEC is mocked with nock
 npm run test:integration  # 37 tests against a throwaway Postgres in Docker
 npm run lint
 
-cd web && npm test        # 71 frontend tests (Vitest + Testing Library); no network
+cd web && npm test        # 73 frontend tests (Vitest + Testing Library); no network
 ```
 
 ---

@@ -142,7 +142,7 @@ const FIGURE_NAMES: Record<string, string> = {
   equity: "shareholders' equity",
   revenue: 'revenue',
   netIncome: 'profit',
-  operatingCashFlow: 'cash from operations',
+  cfo: 'cash from operations',
   longTermDebt: 'long-term debt',
   shares: 'share count',
   grossProfit: 'gross profit',
@@ -157,14 +157,23 @@ function joinWords(words: string[]): string {
   return words.length <= 1 ? (words[0] ?? '') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
 }
 
+/** More missing figures than this reads as a list nobody finishes; it is summarised instead. */
+const MAX_LISTED = 3;
+
 export function unscoredReason(reason: string): string {
   if (/consecutive/i.test(reason)) return "The company's figures don't cover the same two consecutive years yet.";
   if (/no single fiscal year/i.test(reason)) return "The company's latest figures don't all cover the same year yet.";
   const listed = reason.match(/for:\s*([^.]+)\./);
   if (!listed) return 'Not enough figures to calculate it yet.';
   const figures = listed[1]!.split(',').map((f) => FIGURE_NAMES[f.trim()] ?? f.trim());
+  const twoYears = /2 fiscal years/.test(reason);
+  if (figures.length > MAX_LISTED) {
+    return twoYears
+      ? "It compares two years, and most of what it needs isn't reported for both yet."
+      : "Not enough figures to calculate it: most of what it needs isn't reported yet.";
+  }
   const verb = figures.length === 1 ? "isn't" : "aren't";
-  return /2 fiscal years/.test(reason)
+  return twoYears
     ? `It compares two years, and ${joinWords(figures)} ${verb} reported for both yet.`
     : `Not enough figures to calculate it: ${joinWords(figures)} ${verb} reported.`;
 }

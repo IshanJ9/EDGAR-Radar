@@ -135,6 +135,24 @@ describe('unscoredReason', () => {
     );
   });
 
+  test('names every figure key the scoring code uses - none leaks through as a code name (found live: "cfo")', () => {
+    const keys = ['assets', 'cfo', 'currentAssets', 'currentLiabilities', 'depreciation', 'ebit', 'equity', 'grossProfit', 'liabilities', 'longTermDebt', 'netIncome', 'ppe', 'receivables', 'retainedEarnings', 'revenue', 'sga', 'shares'];
+    for (const key of keys) {
+      // No camelCase word and no abbreviation: what a visitor reads is English.
+      expect(unscoredReason(`Missing most-recent-fiscal-year data for: ${key}.`)).not.toMatch(/\b(cfo|ppe|sga|ebit|[a-z]+[A-Z]\w*)\b/);
+    }
+    expect(unscoredReason('Missing most-recent-fiscal-year data for: cfo.')).toContain('cash from operations');
+  });
+
+  test('a long list of missing figures is summarised rather than read out (ExxonMobil Holdings: 12 missing)', () => {
+    expect(unscoredReason('Missing most-recent-fiscal-year data for: assets, liabilities, currentAssets, currentLiabilities, retainedEarnings, ebit, equity.')).toBe(
+      "Not enough figures to calculate it: most of what it needs isn't reported yet.",
+    );
+    expect(unscoredReason('Need 2 fiscal years of data; missing for: assets, currentAssets, currentLiabilities, longTermDebt, cfo.')).toBe(
+      "It compares two years, and most of what it needs isn't reported for both yet.",
+    );
+  });
+
   test('explains years that do not line up', () => {
     expect(unscoredReason('No two consecutive fiscal years are available for every figure (assets 2025/2024; ...).')).toBe(
       "The company's figures don't cover the same two consecutive years yet.",
