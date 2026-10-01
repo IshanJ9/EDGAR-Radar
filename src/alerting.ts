@@ -120,3 +120,46 @@ export async function checkPollerHeartbeat(
   const alerted = await sendOncePerOutage('poller-silence', `:warning: ${message}`, lastSuccessAt, send);
   return { alerted, lastSuccessAt };
 }
+
+/** More than this share of a cycle's companies failing is not a few broken companies but the poller being blocked. */
+export const FAILING_SHARE = 0.5;
+/** Consecutive failing cycles before alerting: one bad cycle is a blip, not an outage. */
+export const FAILING_CYCLES = 2;
+
+interface FailureOptions {
+  /** How an alert is delivered; injectable for tests. */
+  send?: (text: string) => Promise<void>;
+}
+
+/**
+ * The heartbeat's second check (post-Phase 7 hardening, step 5): a poller
+ * that keeps completing cycles but cannot check most companies - SEC
+ * blocking or rate-limiting the server, say - is an outage too.
+ * `checkPollerHeartbeat` cannot see it: every such cycle completes, with
+ * every company counted as checked. This alerts once per outage when the
+ * last FAILING_CYCLES completed cycles each failed for more than
+ * FAILING_SHARE of their companies; the outage began after the last healthy
+ * cycle, so a later episode alerts again.
+ */
+export async function checkPollerFailures({ send = sendSlackAlert }: FailureOptions = {}): Promise<{ alerted: boolean; failing: boolean }> {
+  const recent = await pool.query<{ finished_at: Date; companies_checked: number; companies_failed: number }>(
+    `SELECT finished_at, companies_checked, companies_failed FROM poller_runs
+     WHERE status = 'completed' ORDER BY finished_at DESC LIMIT ${FAILING_CYCLES}`,
+  );
+  const failingRun = (r: { companies_checked: number; companies_failed: number }) =>
+    r.companies_checked > 0 && r.companies_failed > r.companies_checked * FAILING_SHARE;
+  const failing = recent.rows.length === FAILING_CYCLES && recent.rows.every(failingRun);
+  if (!failing) return { alerted: false, failing: false };
+
+  const healthy = await pool.query<{ last_healthy: Date | null }>(
+    `SELECT max(finished_at) AS last_healthy FROM poller_runs
+     WHERE status = 'completed' AND companies_failed <= companies_checked * ${FAILING_SHARE}`,
+  );
+  const latest = recent.rows[0]!;
+  const message =
+    `:warning: EDGAR Radar poller is running but could not check ${latest.companies_failed} of ${latest.companies_checked} companies ` +
+    `in each of its last ${FAILING_CYCLES} cycles (latest finished ${latest.finished_at.toISOString()}). ` +
+    'SEC may be blocking or rate-limiting the server. No filings are lost - the cursor does not advance - but none are being found.';
+  const alerted = await sendOncePerOutage('poller-failing', message, healthy.rows[0]?.last_healthy ?? null, send);
+  return { alerted, failing: true };
+}

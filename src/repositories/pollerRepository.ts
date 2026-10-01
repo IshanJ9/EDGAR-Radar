@@ -56,12 +56,18 @@ export async function startPollerRun(): Promise<number> {
   return result.rows[0]!.id;
 }
 
-export async function completePollerRun(runId: number, companiesChecked: number, newFilingsFound: number): Promise<void> {
+/**
+ * `companiesChecked` counts every company the cycle attempted;
+ * `companiesFailed` how many of those it could not check (post-Phase 7
+ * hardening, step 5) - which the heartbeat watches, since a blocked poller
+ * still completes its cycles.
+ */
+export async function completePollerRun(runId: number, companiesChecked: number, newFilingsFound: number, companiesFailed: number): Promise<void> {
   await pool.query(
     `UPDATE poller_runs
-     SET status = 'completed', finished_at = now(), companies_checked = $2, new_filings_found = $3
+     SET status = 'completed', finished_at = now(), companies_checked = $2, new_filings_found = $3, companies_failed = $4
      WHERE id = $1`,
-    [runId, companiesChecked, newFilingsFound],
+    [runId, companiesChecked, newFilingsFound, companiesFailed],
   );
 }
 

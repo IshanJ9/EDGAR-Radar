@@ -1,5 +1,6 @@
 import { Job } from 'bullmq';
 import { attemptCompanyIngestion } from './companyIngestion';
+import { carriesFinancialStatements } from './filingCategories';
 import { ingestFilingText } from './repositories/filingTextRepository';
 import { claimStage } from './repositories/stageCompletionRepository';
 import { computeLatestRiskFactorDiff } from './riskFactorDiffService';
@@ -16,9 +17,10 @@ const TEXT_INGEST_FORMS = ['10-K'];
 const STAGE = 'parsed';
 
 /**
- * Consumes one `filing.discovered` job: refreshes the company's XBRL facts
- * (Phase 2's ingestion path, reused via `attemptCompanyIngestion` so this
- * gets max-retry-then-quarantine behavior for free) and, for a 10-K
+ * Consumes one `filing.discovered` job: for an annual or quarterly report,
+ * refreshes the company's XBRL facts (Phase 2's ingestion path, reused via
+ * `attemptCompanyIngestion` so this gets max-retry-then-quarantine behavior
+ * for free; other forms skip it since post-Phase 7 hardening, step 4) and, for a 10-K
  * specifically, ingests the filing's full text - the same two things the
  * poller used to do inline before Phase 4 decoupled detection from
  * processing. Enqueues `filing.parsed` when done so the (future) Scoring
@@ -40,9 +42,16 @@ const STAGE = 'parsed';
 export async function processFilingDiscovered(job: Job<FilingDiscoveredJobData>): Promise<void> {
   const { cik, ticker, accessionNumber, form, filingDate, primaryDocument } = job.data;
 
-  const outcome = await attemptCompanyIngestion(cik);
-  const factsRefreshed = outcome.status === 'success';
-  if (outcome.status === 'failed') {
+  // Only a filing that can change the financial statements refreshes them
+  // (post-Phase 7 hardening, step 4). Every other filing - most of them bond
+  // prospectuses - used to download the company's whole companyfacts
+  // document for nothing. Anything missed is still caught by the nightly
+  // reconciliation against SEC's bulk file.
+  const outcome = carriesFinancialStatements(form) ? await attemptCompanyIngestion(cik) : null;
+  const factsRefreshed = outcome?.status === 'success';
+  if (outcome === null) {
+    logger.info({ ticker, cik, accessionNumber, form }, 'No financial statements in this form - facts not refreshed');
+  } else if (outcome.status === 'failed') {
     // outcome.error is a plain string (see companyIngestion.ts's Outcome
     // type), not an Error instance - kept under `reason`, not `err`, so it
     // isn't misread as something pino's Error serializer should apply to.
