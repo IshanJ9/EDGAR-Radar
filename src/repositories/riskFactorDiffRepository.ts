@@ -33,6 +33,15 @@ export async function upsertRiskFactorDiff(
   await responseCache.invalidate(cacheKeys.riskFactorDiff(cik));
 }
 
+/** Whether this exact comparison (current 10-K against prior 10-K) is already stored. */
+export async function hasRiskFactorDiff(cik: string, currentAccn: string, priorAccn: string, db: Queryable = pool): Promise<boolean> {
+  const result = await db.query(
+    'SELECT 1 FROM filing_risk_factor_diffs WHERE cik = $1 AND current_accn = $2 AND prior_accn = $3',
+    [padCik(cik), currentAccn, priorAccn],
+  );
+  return result.rows.length > 0;
+}
+
 /** Returns the most recently computed diff for a company (by current_filing_date), or null if none exists yet. */
 export async function getLatestRiskFactorDiff(cik: string, db: Queryable = pool): Promise<StoredRiskFactorDiff | null> {
   const result = await db.query(

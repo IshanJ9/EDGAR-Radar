@@ -197,8 +197,9 @@ services:
       # Phase 7, step 3: the response cache (`redis-cache`), not the queue Redis.
       CACHE_REDIS_URL: redis://redis-cache:6379
       # Its share of the SEC budget (see the top of this file). The API only
-      # calls SEC for a company it has never stored, or for a risk-factor
-      # diff's filing text, so 1 per second is plenty.
+      # calls SEC for a company it has never stored, so 1 per second is plenty.
+      # (Risk-factor diffs are computed by the parser worker since post-Phase 7
+      # hardening, step 3, F1c; the API only reads stored ones.)
       SEC_REQUESTS_PER_SECOND: "1"
       EDGAR_CONTACT_EMAIL: ${EDGAR_CONTACT_EMAIL}
       JWT_SECRET: ${JWT_SECRET}
