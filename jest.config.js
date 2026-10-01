@@ -18,6 +18,7 @@ module.exports = {
   // `.claude/`: Claude Code keeps git worktrees there, each a full copy of
   // src/ - without this, local runs execute every test twice (gitignored, so
   // CI never sees it).
-  testPathIgnorePatterns: ['/node_modules/', '/dist/', '\\.integration\\.test\\.ts$', '<rootDir>/.claude/'],
+  // `web/`: the frontend has its own tests, run by Vitest (web/package.json).
+  testPathIgnorePatterns: ['/node_modules/', '/dist/', '\\.integration\\.test\\.ts$', '<rootDir>/.claude/', '<rootDir>/web/'],
   setupFiles: ['<rootDir>/jest.setup.ts'],
 };

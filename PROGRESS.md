@@ -1448,3 +1448,53 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - **Caching:** the recompute ran in the poller service, which has no `CACHE_REDIS_URL`, so its writes could not clear the API's cached diff responses. These were stale for at most the 5-minute TTL; the checks above ran afterwards.
 
   **A correction, found by this check: the "Wiz" example was never real.** Alphabet's FY2025 10-K mentions Wiz 7 times, but **none of them is in its Risk Factors section** (0 in either year's extracted section). The `new` Wiz chunks reported in Phase 5, and again in F1c's spot check above, came from the MD&A and financial-statement text the broken extraction pulled in. Phase 5's evidence for "5+ companies show a meaningful diff" leaned partly on that example, and the Tesla robotaxi example still stands. **Corrected:** the README's feature table and the plain-English explainer now cite Tesla's robotaxi risks and Alphabet's genuinely new risk that AI is reshaping the advertising industry; the F1c entry above is annotated. The Phase 5 entries are left as written, as a record of what was believed then.
+
+- [ ] Hardening, step 3, F2 — **The website: scaffold, design system, home page with instant search, Vercel.** Started 2026-10-01: the user approved the stack (React + Vite + TypeScript + Tailwind; Recharts arrives with F3's charts) and chose **Vitest** for `web/` (Jest stays the backend's; recorded as an exception to the locked stack). Built and tested locally; ticked once the user has connected Vercel and the deployed site's proxy is verified end to end.
+
+  **What was built, in `web/`:**
+  - **Scaffold:** Vite's official `react-ts` template (React 19, Vite 8, TypeScript 6, oxlint), plus Tailwind v4, React Router v8, and the mockups' fonts (Space Grotesk, IBM Plex Sans and Mono) self-hosted through Fontsource, so no request goes to Google. `npm audit --omit=dev`: 0 vulnerabilities. Production build: 87 KB of gzipped JavaScript plus fonts.
+  - **Design system** (`src/index.css`): the approved mockups' colours, fonts and radii as Tailwind theme tokens (`bg-canvas`, `text-ink`, `border-line`, `bg-brand` …), a visible keyboard focus ring, and the mockups' icons as components.
+  - **Home page:** the mockup's hero and copy, the three feature cards, and a "by the numbers" band. The badge and band use live numbers from `GET /stats` (196 companies, 16,394 figures, 400 filings in the last 24 hours).
+    - **"Try:" links:** Microsoft, Tesla, NVIDIA, JPMorgan and Coca-Cola.
+    - **One change from the mockup:** its fourth number, "discrepancies in last night's cross-check", became "new filings picked up in the last 24 hours". The real figure is 5 discrepancies, which would read as an error to a visitor without explanation.
+  - **Instant search** (`SearchBox`): an ARIA combobox over the 196 companies, loaded once and searched in the browser.
+    - **Interaction:** results as you type; the arrow keys and Enter open one; a click opens one; Escape clears; "/" anywhere jumps to the box.
+    - **Ranking:** exact ticker first, then a ticker prefix, then a name start, then a word in the name, then anywhere in the name. Punctuation and spacing are ignored, so "coca cola" finds Coca-Cola.
+    - **States:** no match (what is covered, plus suggestions), still loading, and the API unreachable, the last shown as such rather than as "no match".
+  - **Readable names** (`lib/names.ts`): 138 of the 196 SEC names are in capitals, often with a state suffix ("APPLIED MATERIALS INC /DE").
+    - **Rule:** title-casing plus suffix removal fixes most.
+    - **Hand-checked list:** 38 names the rule gets wrong (acronyms, brand capitals such as JPMorgan and NVIDIA, apostrophes such as McDonald's, SEC's "SCHWAB CHARLES CORP"), keyed by ticker and checked against all 196.
+    - **Search** matches both the official and the readable name.
+  - **Pages:** `/` the home page; `/company/:ticker` a stand-in showing the company's name and industry until F3 builds the page (an unknown ticker is a 404); a friendly 404 for any other address. The header links only to pages that exist, so other navigation arrives with its pages.
+  - **API access:** everything goes to the site's own `/api/*`, proxied to the API, so there is no CORS and the browser never sees the API's address. Vercel does this through `web/vercel.json` (a rewrite, plus a fallback to `index.html` for deep links); `npm run dev` does it through Vite's proxy, defaulting to the production API (read-only for everything the site calls; `EDGAR_API_URL` overrides it). **Checked:** Vercel's documentation shows external rewrites in `vercel.json`, but only with HTTPS examples, so the plain-HTTP destination is proved only by the deployed check.
+  - **Repo wiring:**
+    - **Root tooling skips `web/`:** the backend's `tsc` (`exclude`), Jest (both configs), ESLint and `.dockerignore`.
+    - **Proof it is unaffected:** the backend build output contains no `web/` files, and its 262 tests still pass.
+    - **CI:** a new `web` job (lint, test, build, with its own lockfile cache). It gates PRs but not the API deploy, since Vercel deploys the site itself. The lockfile carries the Linux native binaries the bundler, Tailwind and oxlint need on CI and Vercel.
+    - **Local preview:** `.claude/launch.json` gains an `edgar-web` entry.
+
+  **Tests: 35 frontend tests in 6 files (Vitest + Testing Library):**
+  - **Display names:** 4. **Search ranking:** 8. **API client:** 5 (calls `/api`, never the API's address; display names added; errors carry the status; a network failure is an error too).
+  - **Search box:** 9 (results and their order; Enter; arrow keys; click; no match with suggestions; Escape; "/"; loading; failure).
+  - **Home page and routing:** 7 (live numbers; "Try:" links; stats failing while search still works; the page title; 404; a company address; an unknown ticker is a 404).
+  - **Data loading:** 2 (loaded once and shared; a failed load is retried, not remembered).
+
+  A setup file makes any unstubbed `fetch` fail the test, the frontend's equivalent of the backend's nock guard.
+  - **Test-first, with one lapse:** `names`, `search`, `SearchBox` and the home page tests were written before their code and run red; the API client's tests were written first but not run before its code. The mutation checks cover it.
+  - **Mutation checks: 13 of 13 caught**, after one test was added; one more was added beforehand. Each check broke one behaviour:
+    - exact ticker not first; punctuation significant;
+    - SEC suffix kept; hand-checked names ignored;
+    - calling the API's address directly; error statuses ignored;
+    - Escape not clearing; "/" broken; a failure shown as "no match"; arrow keys inert;
+    - no count fallback; an unknown ticker not a 404;
+    - a failed load remembered. This one survived until `useData.test.tsx` was added. The unknown-ticker test was added before the run, after noticing the gap.
+  - **In a real browser** (local dev server proxying the production API):
+    - live numbers shown; "coca cola" then Enter opens `/company/KO`, whose page shows "Coca-Cola Co", "Beverages", and the title "Coca-Cola Co - EDGAR Radar";
+    - no console errors; the search input is labelled "Search for a company";
+    - at phone width (375 px) no horizontal scrolling, with the dropdown over the page.
+  - **Backend unchanged:** `tsc`, ESLint, 262/262 unit tests.
+
+  **Next — the user's part, then mine:**
+  1. Create a free Vercel account (Hobby plan; sign up with GitHub).
+  2. Import the GitHub repo with **Root Directory = `web`**. Vercel detects Vite: build `npm run build`, output `dist`. The production branch is `Main`.
+  3. I then verify, on the `.vercel.app` URL: the home page loads; `/api/stats` and `/api/companies` answer through the proxy (plain HTTP to the API); a deep link such as `/company/AAPL` loads directly (the `index.html` fallback); and search works. Only then is F2 ticked and the live URL added to the README.

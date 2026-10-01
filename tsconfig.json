@@ -55,5 +55,5 @@
   // reads this file's compilerOptions directly - they do not need to go
   // through `tsc`/`npm run build`. Excluded here so they never end up
   // compiled into dist/ and shipped inside the production Docker image.
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "web"]
 }

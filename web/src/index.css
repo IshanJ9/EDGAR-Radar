@@ -1,0 +1,51 @@
+@import 'tailwindcss';
+
+/*
+ * EDGAR Radar's design system - the colours, fonts and radii of the
+ * mockups approved on 2026-09-30. Components use these names (bg-canvas,
+ * text-ink, border-line, ...) rather than raw hex values, so a change of
+ * palette happens here once.
+ */
+@theme {
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --color-canvas: #f3f5f7; /* page background */
+  --color-surface: #ffffff; /* cards, header, inputs */
+  --color-ink: #0d1b2a; /* headings and body text; the dark stats band */
+  --color-body: #344054; /* secondary text */
+  --color-muted: #475467; /* tertiary text */
+  --color-faint: #667085;
+  --color-line: #d9dee5; /* borders */
+  --color-line-soft: #eaecf0;
+
+  --color-brand: #1e40af; /* primary blue: logo, focus, selected */
+  --color-link: #1e3a8a;
+  --color-link-hover: #172554;
+  --color-brand-tint: #eef2fc; /* highlighted search result */
+  --color-brand-soft: #e7edfb;
+
+  --color-good: #0e7c66;
+  --color-good-ink: #0b5d4b;
+  --color-good-soft: #e3eeea;
+  --color-warn: #b45309;
+  --color-warn-soft: #fdf0e1;
+  --color-on-dark-muted: #b8c2d0;
+
+  --radius-card: 18px;
+  --radius-input: 16px;
+}
+
+@layer base {
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+  }
+  a {
+    @apply text-link hover:text-link-hover;
+  }
+  /* Keyboard users always see where they are; mouse clicks don't flash a ring. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand;
+  }
+}
