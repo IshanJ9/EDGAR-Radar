@@ -1258,7 +1258,23 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
 
   **Next:** deploy; re-ingest all 196 from the bulk file already on the VM (0 SEC requests); measure coverage (before: all three 27, none 44); check the company-list response time, since scoring now reads five years per figure; delete the 1.4 GB file.
 
-<<<<<<< Updated upstream
+  **Verified in production (2026-10-01).** The running images contain `storeCompanyFacts` and `dist/scripts/backfillFromBulk.js`.
+  - **Coverage after the deploy alone** (aligned years, no new data yet): all three scores **27 → 21**, none 44 → 52 (Altman 138, Piotroski 41, Beneish 33). Expected: scores that had paired different years now fail honestly.
+  - **Re-ingest from the bulk file:** a one-off container of the poller service with the file mounted read-only (`docker compose run --rm --no-deps -v /home/ubuntu/bulk-analysis:/bulk:ro poller node dist/scripts/backfillFromBulk.js /bulk/companyfacts.zip`), 06:04:21 → 06:04:50 UTC, **29 s; 196/196 in the file, 196 stored, 0 failed; 0 SEC requests.** The poller was left running: the script makes no SEC requests, and every write is an idempotent upsert.
+  - **Data:** facts 14,876 → **16,394**, **0 quarantined**, the replica identical (16,394), 0 mislabelled years. Companies now holding the new figures: cost of revenue under `CostOfGoodsAndServicesSold` 87, `CostOfRevenue` 41, `CostOfGoodsSold` 10, the excluding-D&A tag 8; weighted-average shares 66; G&A 57, selling and marketing 28; receivables 22 + 16; revenue fallbacks 5 + 4 + 1.
+  - **Coverage after the re-ingest: all three scores 56** (27 before F1b-2), two 42, one 61, **none 37** (was 44). Per score: **Piotroski 41 → 104, Beneish 33 → 71**, Altman 138. Apple unchanged (FY2025: 2.31 / 8 / −2.30).
+  - **Derived figures reach the API:** 60 companies' served scores list a `derived` figure — e.g. AbbVie's Piotroski and Beneish use `derived: ["grossProfit"]` (it reports cost of revenue, not gross profit).
+  - **The company list:** cold **2.53 s** (it was 1.5–2.2 s with two years per figure), warm 2 ms; 196 companies, 58.7 KB. Acceptable behind the 5-minute cache; logged below.
+  - **The 1.4 GB bulk file deleted** from the VM (disk 28% used).
+
+  **Why Altman is 138, not the 146 before F1b-2 — checked company by company (58 unscored):**
+  - **49 are honest and expected:** 19 report no `OperatingIncomeLoss` in recent years (e.g. ADM, IBM, LLY, MRK — EBIT was deliberately not changed), 29 are banks, insurers, REITs or homebuilders without current assets/liabilities (by design), plus SYY (no recent retained earnings).
+  - **5 lost a score that was wrong:** ETN, GE, JNJ, KLAC and TJX report EBIT only up to 2010–2019, so before F1b-2 their Altman paired, for example, GE's 2012 operating income with its 2025 balance sheet — exactly the bug fixed here.
+  - **3 lost a score to a gap in F1b-2 itself (logged, not fixed):** DHR, T and TMUS stopped reporting total `Liabilities` years ago (their latest are 2010, 2015, 2012). A derivation runs only when a company has **no** reported figure at all, so the stale series blocks liabilities = assets − equity, which would fill every recent year. The same rule applies to gross profit and SG&A. The fix — derive for any year the reported figure lacks — is a small change to `deriveIfMissing`; not made without the user's decision.
+  - **XOM is a universe issue:** CIK 0002115436 is *ExxonMobil Holdings Corp*, a new holding company with a single 10-Q (2026-06-30) and no annual history yet; ExxonMobil's long history is under CIK 0000034088. Its scores will appear once the holding company files a 10-K — or the universe can point at the old CIK meanwhile. Not changed.
+
+  **Found in passing, logged:** the company list's cold build grows with history (2.5 s). If the frontend shows it, the fix is to serve stored score results rather than recompute 196 × 3 scores — a later decision.
+
 - [x] Hardening, out-of-band — **Replace `@xenova/transformers` with `@huggingface/transformers` to clear 5 production audit findings.** Requested by the user 2026-10-01, outside the numbered steps. Done with **fp32 weights** (the user's choice, below); **deployed 2026-09-30 20:35 UTC** (PR #32), with the embedding check passing in the build on the ARM64 VM.
 
   **The findings.** `npm audit --omit=dev`: 1 critical and 4 high, all through `@xenova/transformers@2.17.2` — `protobufjs <=7.6.2` (code execution; via `onnx-proto` in `onnxruntime-web`) and `sharp <=0.35.4-rc.0` (libvips/libheif). npm's only fix was a downgrade to 1.4.2, which was not an option.
@@ -1289,21 +1305,19 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   **Getting it merged took two branch repairs, both from merging `Main` in, neither from this change.** First, a line-by-line merge broke `package-lock.json` (above). Second, after `Main` moved on (PRs #33, #34), the only conflict was the "Current status" paragraph — and it turned out the branch already carried that paragraph **twice**, left behind by the first merge keeping both sides. The resolution kept `Main`'s latest paragraph plus this entry's one sentence; verified on the merged result: lockfile blob unchanged, 227/227 unit tests, 31/31 integration tests, build and lint clean. **Lesson, for any branch that changes dependencies:** never let git merge `package-lock.json` textually — keep one side's and regenerate with `npm install`.
 
   **Logged, not changed:** `npm audit` (dev dependencies included) shows 1 high in `brace-expansion`, reached only through jest/eslint — present in HEAD's lockfile before this change.
-=======
-  **Verified in production (2026-10-01).** The running images contain `storeCompanyFacts` and `dist/scripts/backfillFromBulk.js`.
-  - **Coverage after the deploy alone** (aligned years, no new data yet): all three scores **27 → 21**, none 44 → 52 (Altman 138, Piotroski 41, Beneish 33). Expected: scores that had paired different years now fail honestly.
-  - **Re-ingest from the bulk file:** a one-off container of the poller service with the file mounted read-only (`docker compose run --rm --no-deps -v /home/ubuntu/bulk-analysis:/bulk:ro poller node dist/scripts/backfillFromBulk.js /bulk/companyfacts.zip`), 06:04:21 → 06:04:50 UTC, **29 s; 196/196 in the file, 196 stored, 0 failed; 0 SEC requests.** The poller was left running: the script makes no SEC requests, and every write is an idempotent upsert.
-  - **Data:** facts 14,876 → **16,394**, **0 quarantined**, the replica identical (16,394), 0 mislabelled years. Companies now holding the new figures: cost of revenue under `CostOfGoodsAndServicesSold` 87, `CostOfRevenue` 41, `CostOfGoodsSold` 10, the excluding-D&A tag 8; weighted-average shares 66; G&A 57, selling and marketing 28; receivables 22 + 16; revenue fallbacks 5 + 4 + 1.
-  - **Coverage after the re-ingest: all three scores 56** (27 before F1b-2), two 42, one 61, **none 37** (was 44). Per score: **Piotroski 41 → 104, Beneish 33 → 71**, Altman 138. Apple unchanged (FY2025: 2.31 / 8 / −2.30).
-  - **Derived figures reach the API:** 60 companies' served scores list a `derived` figure — e.g. AbbVie's Piotroski and Beneish use `derived: ["grossProfit"]` (it reports cost of revenue, not gross profit).
-  - **The company list:** cold **2.53 s** (it was 1.5–2.2 s with two years per figure), warm 2 ms; 196 companies, 58.7 KB. Acceptable behind the 5-minute cache; logged below.
-  - **The 1.4 GB bulk file deleted** from the VM (disk 28% used).
 
-  **Why Altman is 138, not the 146 before F1b-2 — checked company by company (58 unscored):**
-  - **49 are honest and expected:** 19 report no `OperatingIncomeLoss` in recent years (e.g. ADM, IBM, LLY, MRK — EBIT was deliberately not changed), 29 are banks, insurers, REITs or homebuilders without current assets/liabilities (by design), plus SYY (no recent retained earnings).
-  - **5 lost a score that was wrong:** ETN, GE, JNJ, KLAC and TJX report EBIT only up to 2010–2019, so before F1b-2 their Altman paired, for example, GE's 2012 operating income with its 2025 balance sheet — exactly the bug fixed here.
-  - **3 lost a score to a gap in F1b-2 itself (logged, not fixed):** DHR, T and TMUS stopped reporting total `Liabilities` years ago (their latest are 2010, 2015, 2012). A derivation runs only when a company has **no** reported figure at all, so the stale series blocks liabilities = assets − equity, which would fill every recent year. The same rule applies to gross profit and SG&A. The fix — derive for any year the reported figure lacks — is a small change to `deriveIfMissing`; not made without the user's decision.
-  - **XOM is a universe issue:** CIK 0002115436 is *ExxonMobil Holdings Corp*, a new holding company with a single 10-Q (2026-06-30) and no annual history yet; ExxonMobil's long history is under CIK 0000034088. Its scores will appear once the holding company files a 10-K — or the universe can point at the old CIK meanwhile. Not changed.
+- [ ] Hardening, step 3, F1b-3 — **A stale reported figure no longer blocks its derivation.** The user chose to fix F1b-2's logged gap before F1c (2026-10-01). Built and tested locally; ticked after deploy and a production check.
 
-  **Found in passing, logged:** the company list's cold build grows with history (2.5 s). If the frontend shows it, the fix is to serve stored score results rather than recompute 196 × 3 scores — a later decision.
->>>>>>> Stashed changes
+  **The rule, in `deriveIfMissing` (src/scoring.ts).** Before, a figure was derived from its parts only when the company had **never** reported it, so Danaher's 2010 `Liabilities` blocked liabilities = assets − equity for 2011–2025. Now:
+  - The derived series is used when it reaches a **newer year** than the reported one. On a tie the reported figure wins, as before.
+  - The winner is used **for every year**. Reported and derived values are never mixed, the same way `annualFacts` never mixes tags: a reported 2023 next to a derived 2024 would compare two different definitions year over year.
+  - The parts are read **only when the reported series is behind the newest year another figure has**. Otherwise no derivation could produce a newer common year, and the cold company list (196 × 3 scores, 2.5 s) would pay three extra queries per company for nothing.
+  - It applies to all three derivations: liabilities (Altman), gross profit (Piotroski, Beneish) and SG&A (Beneish).
+
+  **Tests:** 6 new scoring tests: Altman derives liabilities past a 2010 figure; a stale reported gross profit gives way to a newer derived one; the derived series replaces the reported one for every year; reported and derived years are not combined into a pair neither has alone; a stale figure is kept when its parts are no newer; the parts are not read when the reported figure is current. 3 failed before the change; the last 2 were added after mutation checks. **233/233 unit tests** (also with one worker); `tsc`, ESLint and the build clean. **The integration suite did not run locally** (Docker Desktop was not running); CI runs it on the PR and gates the deploy on it.
+  - **Mutation checks: 6 of 6 caught, after two tests were added.** First run: 4 caught (parts always read; the gate off by one; the old only-when-empty rule; reported years kept with derived ones added only for newer years). **Two survived:**
+    - a tie going to the derived figure: the existing "reported wins" test never reached that branch, because the gate returned first;
+    - gap-filling by mixing: the "never mixed" fixture had no year where mixing changed the result.
+    The two new tests above catch both.
+
+  **Next:** deploy (no re-ingest; the stored data is unchanged), then measure coverage (now: all three 56, none 37, Altman 138) and confirm DHR, T and TMUS get Altman scores. Then check the company list's cold time against 2.53 s.
