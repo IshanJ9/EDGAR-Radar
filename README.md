@@ -20,7 +20,7 @@ It runs unattended in production, around the clock, at **$0/month**.
 | **Normalizes financial data** | Pulls XBRL financial facts (revenue, net income, assets, debt…), resolves tag variants, tracks restatements, and **quarantines** values that fail data-quality checks instead of storing them. |
 | **Reconciles nightly** | Streams SEC's 1.4 GB bulk `companyfacts.zip` and compares it with every stored value, so nothing missed by the poller stays wrong. |
 | **Scores financial health** | Altman Z″ (distress), Piotroski F-Score (strength) and Beneish M-Score (earnings manipulation). Every score carries its inputs, and says "not enough history" rather than guessing. Backtested on Under Armour, Kraft Heinz and GE. |
-| **Diffs risk factors** | Compares the "Risk Factors" sections of a company's consecutive 10-Ks using local sentence embeddings, surfacing genuinely **new** and **removed** risks, e.g. Alphabet's Wiz acquisition and Tesla's Robotaxi launch. |
+| **Diffs risk factors** | Compares the "Risk Factors" sections of a company's consecutive 10-Ks using local sentence embeddings, surfacing genuinely **new** and **removed** risks, e.g. Tesla's Robotaxi launch and Alphabet's new risk that AI is reshaping the advertising industry. |
 | **Watchlists** | Users register, log in (JWT) and watch companies; a notification worker reports new filings for watched companies. |
 
 ---

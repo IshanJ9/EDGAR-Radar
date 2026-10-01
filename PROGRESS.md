@@ -1363,7 +1363,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
     - **Restart:** the poller restarted at 08:02; cycle 226 began at 08:02:19, and all services were up.
   - **Data:** **181 diffs** for 181 companies, the replica identical; 377 stored 10-K texts.
   - **Spot checks through the public API:**
-    - **Alphabet** (FY2025 vs FY2024): the chunks about the **Wiz** acquisition are `new`.
+    - **Alphabet** (FY2025 vs FY2024): the chunks about the **Wiz** acquisition are `new`. *(Corrected under F1c-2: those chunks came from the MD&A text the broken extraction pulled in; Wiz is not in Alphabet's Risk Factors.)*
     - **Tesla:** two chunks about **robotaxi** are `new`, five `modified`.
     - **Sizes:** the responses are large: Alphabet 504 KB, Nvidia 329 KB, Tesla 186 KB. The frontend should not load every chunk at once; a later decision.
 
@@ -1378,12 +1378,12 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - **The symptom:** lopsided counts. Alphabet shows 115 removed against 18 added, and Nvidia 140 against 9. The "removed" chunks included MD&A text, such as Nvidia's "Israel and Regional Conflicts We are monitoring…".
   - **The cause:** measured inside the production image, `extractRiskFactorsSection` found no end marker for these filings and returned everything **from Item 1A to the signature page**. Alphabet's "section" is 208,949 of 345,018 characters (about 60% of the 10-K) in both years. Tesla's correctly stops at the end of Item 1A, at about 21% of the document, which is also the median across all filings.
   - **Count:** across the 181 compared pairs, **60 companies have both 10-Ks running to the end and 2 have one**. They match the lopsided diffs: 60 have at least 50 removed and more than three times as many removed as added.
-  - **Not a new bug:** this is Phase 5's section extraction, unchanged by F1c. The backfill is just the first time it ran on the whole universe; before, only Apple and JPMorgan had been tried. Real changes still show up (Alphabet's Wiz chunks are in Item 1A), but the counts and the "removed" list for these 62 are mostly noise from MD&A and the financial statements.
+  - **Not a new bug:** this is Phase 5's section extraction, unchanged by F1c. The backfill is just the first time it ran on the whole universe; before, only Apple and JPMorgan had been tried. Real changes still show up (~~Alphabet's Wiz chunks are in Item 1A~~ — **wrong, corrected under F1c-2**: Wiz is not in Alphabet's Risk Factors at all), but the counts and the "removed" list for these 62 are mostly noise from MD&A and the financial statements.
   - **Recommendation:** fix the extraction's end detection and recompute these 62 before the frontend shows diffs. A recompute needs no SEC requests, because both texts are stored. Not done: it is a separate step, for the user to decide.
 
   **Not yet exercised in production:** the parser worker computing a diff for a **newly filed** 10-K. None has arrived since this deploy, and most companies with September or October year ends file in November or December. Its unit tests cover it; the first real one will show in the parser worker's log as `Risk-factor diff`.
 
-- [ ] Hardening, step 3, F1c-2 — **Fix the Risk Factors extraction, then recompute every stored diff.** The user's choice after F1c's production check (2026-10-01), before the frontend. Built and tested locally; ticked after deploy, the recompute and a production check.
+- [x] Hardening, step 3, F1c-2 — **Fix the Risk Factors extraction, then recompute every stored diff.** The user's choice after F1c's production check (2026-10-01), before the frontend. PR #41 deployed; **recomputed and verified in production 2026-10-01** (end of this entry). This completes **F1**, the frontend's API work.
 
   **Diagnosed on the 377 stored 10-Ks, inside the production image, before changing anything.** The old rule took the **last** line matching "Item 1A. Risk Factors" and ended at the first "Item 1B" or "Item 2" after it:
 
@@ -1433,3 +1433,18 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
     - the recompute swaps old and new.
 
   **Next:** deploy; run the recompute in production (no SEC requests, ~75 min of CPU at F1c's pace); check the counts against the expectation above, and that Alphabet's and Nvidia's added/removed counts are no longer lopsided.
+
+  **Verified in production (2026-10-01).** CI for merge commit `814f57e` passed and deployed; the poller's image contains the `--recompute` mode.
+  - **Recompute:** a one-off container of the poller service, `backfillRiskFactorDiffs.js --recompute`, 08:29:34 → 09:04:30 UTC, **34.9 min** (half F1c's backfill: the sections are now much smaller), exit 0. **computed 181, not-extractable 7, not-enough-history 8, failed 0; 0 SEC requests.** The poller ran throughout (cycle 229 completed at 09:01, 196 companies) and all services stayed up.
+  - **Exactly as expected:**
+    - all 181 stored diffs were recomputed; the replica matches (181);
+    - the 6 meaningless diffs (GE, Intel, McDonald's, Honeywell, BNY Mellon, US Bancorp) were **deleted**, and GE's endpoint now answers 404;
+    - AMAT, ED, EMR, INTU, O and XEL **gained** diffs;
+    - the 7 not-extractable are those predicted (the 6 above plus ICE);
+    - the 8 without enough history are the 7 big banks and XOM.
+  - **Lopsided diffs 62 → 9.** Alphabet went from 18 added / 115 removed to **2 added / 18 removed**, and Nvidia from 9 / 140 to **4 / 23**. Medians across all 181: 3 added, 12 removed, 162 chunks. Response sizes fell (Alphabet 504 KB → 194 KB).
+  - **The 9 still lopsided look genuine.** Inspected: each section starts and ends correctly in both years, and the companies cut or rewrote their Risk Factors: Vertex 160K → 72K characters, Starbucks 97K → 58K, Occidental 80K → 45K. General Mills (0 added, 65 removed, sections of similar length) is most likely rewording judged below the 0.60 "modified" threshold. Not investigated further.
+  - **Tesla** is unchanged in substance: robotaxi chunks are still `new` (2) and `modified` (5).
+  - **Caching:** the recompute ran in the poller service, which has no `CACHE_REDIS_URL`, so its writes could not clear the API's cached diff responses. These were stale for at most the 5-minute TTL; the checks above ran afterwards.
+
+  **A correction, found by this check: the "Wiz" example was never real.** Alphabet's FY2025 10-K mentions Wiz 7 times, but **none of them is in its Risk Factors section** (0 in either year's extracted section). The `new` Wiz chunks reported in Phase 5, and again in F1c's spot check above, came from the MD&A and financial-statement text the broken extraction pulled in. Phase 5's evidence for "5+ companies show a meaningful diff" leaned partly on that example, and the Tesla robotaxi example still stands. **Corrected:** the README's feature table and the plain-English explainer now cite Tesla's robotaxi risks and Alphabet's genuinely new risk that AI is reshaping the advertising industry; the F1c entry above is annotated. The Phase 5 entries are left as written, as a record of what was believed then.
