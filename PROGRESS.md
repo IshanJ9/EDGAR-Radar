@@ -1656,7 +1656,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
     - **Apple:** "filings last checked 28 min ago".
   - **Still open:** F5's real test - a non-technical person using the site unaided, with what confuses them fixed afterwards.
 
-- [ ] Hardening, step 4 — **Skip redundant SEC downloads.** Built and tested 2026-10-02, at the user's request together with step 5 (one push, as with F4-F5). Ticked after deploy and a production check.
+- [x] Hardening, step 4 — **Skip redundant SEC downloads.** Built and tested 2026-10-02, at the user's request together with step 5 (one push, as with F4-F5). Deployed and verified in production 2026-10-02.
 
   **Measured first, in production:** the poller discovered **2,028 filings in the 7 days to 2026-10-02**, from 66 companies, and the parser worker downloaded the company's whole `companyfacts` document from SEC for **every one** of them (often several MB, from the parser's 2/s SEC share).
   - **By form:** 424B2 1,709, FWP 148, Form 4 108, 144 20, 8-K 18, 424B3 9, 425 7, 13D/A 3, SD 2, others 4.
@@ -1671,7 +1671,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
 
   **Tests:** `carriesFinancialStatements` (2: the six report forms and amendments; and the 14 non-report forms seen in production that week, plus 6-K and DEF 14A) and the parser worker (7: a 10-K, 10-Q and 10-K/A refresh the facts; a 424B2, FWP, Form 4 and 8-K do not, and are still passed on). 6 were red first; the 3 report cases already passed. **Mutation checks, 3 of 3 caught:** every form refreshing; amendments ignored; the parser always downloading.
 
-- [ ] Hardening, step 5 — **Heartbeat blind spot.** Built and tested 2026-10-02 with step 4; ticked after deploy and a production check.
+- [x] Hardening, step 5 — **Heartbeat blind spot.** Built and tested 2026-10-02 with step 4; deployed and verified in production 2026-10-02.
 
   **The blind spot, worse than the roadmap's wording:**
   - The poller adds to `companiesChecked` **before** it tries each company, and a failed submissions fetch just moves on.
@@ -1702,5 +1702,5 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
 
   **Totals for both steps:** **286/286 unit tests**, **38/38 integration**; `tsc`, ESLint clean.
 
-  **Next, for both steps:** deploy. Then check that the migration ran, that new cycles record `companies_failed`, and that the heartbeat runs both checks; and that the parser worker logs "facts not refreshed" for the day's prospectuses and insider filings instead of downloading companyfacts. A live drill of the failure alert would need SEC really failing, or fake runs written into production that send a real Slack alert. It is not done without the user's go-ahead; the tests above cover the logic.
+  **Verified in production 2026-10-02** (merge 72152c8, CI and deploy green): migration `1790900000000_poller-run-failures` ran at 20:12 UTC; the first cycle on the new code (run 253) completed with 196 checked, `companies_failed` 0, 21 new filings; the heartbeat restarted and both checks run without error (the failure check logs only when failing); the parser worker logged "facts not refreshed" for all 21 filings in the 20 minutes after deploy (424B2, FWP, Form 4, 144) and made zero companyfacts downloads. A live drill of the failure alert was not run: it needs SEC really failing, or fake runs in production that send a real Slack alert, and the user has not asked for it.
 
