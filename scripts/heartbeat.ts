@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import cron from 'node-cron';
-import { checkPollerHeartbeat } from '../src/alerting';
+import { checkPollerFailures, checkPollerHeartbeat } from '../src/alerting';
 
 // Checks every 15 minutes; alerts if the poller (which itself runs every 30
 // minutes) hasn't completed successfully in 60 minutes - allowing for one
@@ -22,6 +22,11 @@ const STARTED_AT = new Date();
 // same way, and it would crash-loop - re-posting to Slack on every restart.
 // An alert that failed to send is not recorded, so the next check retries it.
 async function runOnce() {
+  await checkSilence();
+  await checkFailures();
+}
+
+async function checkSilence() {
   try {
     const { alerted, lastSuccessAt } = await checkPollerHeartbeat(THRESHOLD_MINUTES, { monitoringSince: STARTED_AT });
     console.log(
@@ -30,6 +35,20 @@ async function runOnce() {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[${new Date().toISOString()}] Heartbeat check FAILED (retrying at the next check): ${message}`);
+  }
+}
+
+/**
+ * Post-Phase 7 hardening, step 5: cycles that complete but cannot check most
+ * companies (SEC blocking the host) - invisible to the silence check above.
+ */
+async function checkFailures() {
+  try {
+    const { alerted, failing } = await checkPollerFailures();
+    if (failing) console.warn(`[${new Date().toISOString()}] Poller failing most company checks.${alerted ? ' Alert sent.' : ''}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[${new Date().toISOString()}] Poller-failure check FAILED (retrying at the next check): ${message}`);
   }
 }
 

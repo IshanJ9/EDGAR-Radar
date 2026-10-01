@@ -6,7 +6,7 @@
  * Only ever run via `npm run test:integration`, never `npm test`.
  */
 import { pool } from '../db';
-import { findDiscoveredAccessions, recordDiscoveredFiling } from '../repositories/pollerRepository';
+import { completePollerRun, findDiscoveredAccessions, recordDiscoveredFiling, startPollerRun } from '../repositories/pollerRepository';
 
 const FILING = { accessionNumber: '0000320193-26-000100', cik: '0000320193', form: '4', filingDate: '2026-09-28' };
 
@@ -36,4 +36,22 @@ test('recording the same filing twice keeps one row and does not throw', async (
 
 test('an empty list returns an empty set', async () => {
   expect((await findDiscoveredAccessions([])).size).toBe(0);
+});
+
+// Post-Phase 7 hardening, step 5.
+describe('completePollerRun - failed checks', () => {
+  test('stores how many companies could not be checked; a run recorded before the column existed reads 0', async () => {
+    await pool.query('TRUNCATE TABLE poller_runs RESTART IDENTITY');
+    const legacy = await startPollerRun();
+    await pool.query(`UPDATE poller_runs SET status = 'completed', finished_at = now(), companies_checked = 196 WHERE id = $1`, [legacy]);
+    const runId = await startPollerRun();
+
+    await completePollerRun(runId, 196, 3, 190);
+
+    const rows = await pool.query('SELECT id, companies_checked, new_filings_found, companies_failed FROM poller_runs ORDER BY id');
+    expect(rows.rows).toEqual([
+      { id: legacy, companies_checked: 196, new_filings_found: 0, companies_failed: 0 },
+      { id: runId, companies_checked: 196, new_filings_found: 3, companies_failed: 190 },
+    ]);
+  });
 });

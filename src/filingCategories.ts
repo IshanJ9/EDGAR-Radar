@@ -66,3 +66,18 @@ export function categorizeForm(form: string): FilingCategory {
   if (/^424B\d$/.test(base)) return 'offering';
   return EXACT[base] ?? 'other';
 }
+
+/**
+ * Whether a filing can change a company's XBRL financial statements - the
+ * facts behind the scores and the company page - and so is worth a fresh
+ * companyfacts download (post-Phase 7 hardening, step 4). Annual and
+ * quarterly reports and their amendments do; nothing else does. An 8-K's
+ * structured data covers its cover page only, and prospectuses, insider
+ * trades and the rest carry none. In production's week to 2026-10-02 the
+ * poller found 2,028 filings, none of them annual or quarterly reports, and
+ * every one used to trigger a companyfacts download.
+ */
+export function carriesFinancialStatements(form: string): boolean {
+  const category = categorizeForm(form);
+  return category === 'annual-report' || category === 'quarterly-report';
+}

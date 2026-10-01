@@ -62,3 +62,21 @@ describe('processFilingDiscovered - risk-factor diffs', () => {
     expect(filingParsedQueue.add).toHaveBeenCalledWith('filing-parsed', expect.objectContaining({ accessionNumber: 'k-2026', textIngested: true }));
   });
 });
+
+// Post-Phase 7 hardening, step 4: a companyfacts download (several MB, one
+// request of the parser's SEC share) only for filings that change the facts.
+describe('processFilingDiscovered - which filings refresh the financial facts', () => {
+  test.each(['10-K', '10-Q', '10-K/A'])('a %s refreshes them', async (form) => {
+    await processFilingDiscovered(job(form));
+
+    expect(attemptCompanyIngestion).toHaveBeenCalledWith('0000320193');
+    expect(filingParsedQueue.add).toHaveBeenCalledWith('filing-parsed', expect.objectContaining({ factsRefreshed: true }));
+  });
+
+  test.each(['424B2', 'FWP', '4', '8-K'])('a %s does not - no SEC download - but is still passed on to scoring', async (form) => {
+    await processFilingDiscovered(job(form));
+
+    expect(attemptCompanyIngestion).not.toHaveBeenCalled();
+    expect(filingParsedQueue.add).toHaveBeenCalledWith('filing-parsed', expect.objectContaining({ form, factsRefreshed: false }));
+  });
+});

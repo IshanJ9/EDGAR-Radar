@@ -233,3 +233,18 @@ test('a failed company check records no industry for it', async () => {
   expect(updateCompanyIndustry).toHaveBeenCalledTimes(1);
   expect(updateCompanyIndustry).toHaveBeenCalledWith(APPLE.cik, '3571', 'Electronic Computers');
 });
+
+// Post-Phase 7 hardening, step 5: the heartbeat needs to see failed checks,
+// which the old "companies checked" count hid (it counts attempts).
+test('each cycle records how many companies could not be checked', async () => {
+  const w = world('2026-09-28T13:30:00Z');
+  await w.cycle();
+  expect(pollerRepository.completePollerRun).toHaveBeenLastCalledWith(1, 2, 0, 0);
+
+  w.failChecksFor(MSFT.cik, true);
+  w.advance(30);
+  const result = await w.cycle();
+
+  expect(pollerRepository.completePollerRun).toHaveBeenLastCalledWith(1, 2, 0, 1);
+  expect(result).toMatchObject({ companiesChecked: 2, companiesFailed: 1 });
+});

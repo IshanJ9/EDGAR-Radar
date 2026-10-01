@@ -1656,3 +1656,51 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
     - **Apple:** "filings last checked 28 min ago".
   - **Still open:** F5's real test - a non-technical person using the site unaided, with what confuses them fixed afterwards.
 
+- [ ] Hardening, step 4 — **Skip redundant SEC downloads.** Built and tested 2026-10-02, at the user's request together with step 5 (one push, as with F4-F5). Ticked after deploy and a production check.
+
+  **Measured first, in production:** the poller discovered **2,028 filings in the 7 days to 2026-10-02**, from 66 companies, and the parser worker downloaded the company's whole `companyfacts` document from SEC for **every one** of them (often several MB, from the parser's 2/s SEC share).
+  - **By form:** 424B2 1,709, FWP 148, Form 4 108, 144 20, 8-K 18, 424B3 9, 425 7, 13D/A 3, SD 2, others 4.
+  - **Not one was a 10-K or 10-Q**, the only filings that change the financial statements the scores and the company page use.
+  - **The `factsRefreshed` flag** is only passed along downstream, never used to decide anything.
+
+  **The change:**
+  - `carriesFinancialStatements(form)` in src/filingCategories.ts is true for the annual and quarterly report categories: 10-K, 10-Q, 20-F and 40-F, plus their `/A` amendments, which categorise with the form they amend.
+  - The parser worker calls `attemptCompanyIngestion` only for those. Every other filing is still parsed, passed on to scoring and notification as before, with `factsRefreshed: false`, and logged as "No financial statements in this form - facts not refreshed".
+  - **8-Ks are skipped too:** their XBRL covers the cover page only.
+  - **Safety net:** anything a skipped filing could have changed is still caught by the nightly reconciliation against SEC's bulk file.
+
+  **Tests:** `carriesFinancialStatements` (2: the six report forms and amendments; and the 14 non-report forms seen in production that week, plus 6-K and DEF 14A) and the parser worker (7: a 10-K, 10-Q and 10-K/A refresh the facts; a 424B2, FWP, Form 4 and 8-K do not, and are still passed on). 6 were red first; the 3 report cases already passed. **Mutation checks, 3 of 3 caught:** every form refreshing; amendments ignored; the parser always downloading.
+
+- [ ] Hardening, step 5 — **Heartbeat blind spot.** Built and tested 2026-10-02 with step 4; ticked after deploy and a production check.
+
+  **The blind spot, worse than the roadmap's wording:**
+  - The poller adds to `companiesChecked` **before** it tries each company, and a failed submissions fetch just moves on.
+  - So a poller that SEC blocks completes every cycle with "196 companies checked", and the heartbeat, which only asks whether cycles complete, never alerts.
+  - The cursor correctly stays put (no filing is lost), but nothing is found either, indefinitely and silently.
+
+  **The change:**
+  - **Migration `1790900000000_poller-run-failures`** adds `poller_runs.companies_failed` (integer, default 0, so earlier runs read 0). `completePollerRun` stores the cycle's count of failed submissions checks, and `runPollCycle` returns it as `companiesFailed`.
+  - **`checkPollerFailures`** (src/alerting.ts) alerts **once per outage** when each of the last **2** completed cycles failed for **more than half** of its companies.
+    - **Two cycles:** one bad cycle is a blip, not an outage.
+    - **More than half:** a few persistently broken companies are already handled by quarantine.
+    - **Once per outage:** the outage begins after the last healthy cycle, so recovering and then failing again alerts again. It reuses the silence alert's once-per-outage store under its own type, `poller-failing`.
+    - **The message** says how many of 196 failed, that SEC may be blocking or rate-limiting the server, and that no filings are lost but none are being found.
+  - **The heartbeat** runs both checks every 15 minutes, each with its own error handling, so one failing never skips the other.
+
+  **Tests:**
+  - **`pollerFailures.test.ts`, 6 tests** on a simulated clock, in the style of the silence tests:
+    - a healthy poller never alerts;
+    - **SEC blocking every check alerts exactly once over 8 cycles**;
+    - one bad cycle doesn't alert;
+    - 10 persistently broken companies don't alert;
+    - after recovery, a second episode alerts again (once);
+    - a failed Slack delivery is retried at the next check.
+  - **Poller:** each cycle records its failures (1 test).
+  - **Integration:** the column is written, and a run recorded without it reads 0 (1 test).
+  - **Red first:** all were red before the change.
+  - **Mutation checks, 6 of 6 caught:** failures not recorded; one bad cycle alerting; a few broken companies alerting; a later outage never alerting; a blocked poller never alerting; the column never written (caught by the integration suite).
+
+  **Totals for both steps:** **286/286 unit tests**, **38/38 integration**; `tsc`, ESLint clean.
+
+  **Next, for both steps:** deploy. Then check that the migration ran, that new cycles record `companies_failed`, and that the heartbeat runs both checks; and that the parser worker logs "facts not refreshed" for the day's prospectuses and insider filings instead of downloading companyfacts. A live drill of the failure alert would need SEC really failing, or fake runs written into production that send a real Slack alert. It is not done without the user's go-ahead; the tests above cover the logic.
+

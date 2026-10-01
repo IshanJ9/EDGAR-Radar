@@ -41,7 +41,9 @@ export const FILING_LOOKBACK_DAYS = 2;
  * dominated by real per-company retry/backoff time; production callers
  * omit it and get the real universe.
  */
-export async function runPollCycle(universeOverride?: UniverseEntry[]): Promise<{ companiesChecked: number; newFilingsFound: number }> {
+export async function runPollCycle(
+  universeOverride?: UniverseEntry[],
+): Promise<{ companiesChecked: number; newFilingsFound: number; companiesFailed: number }> {
   const universe = universeOverride ?? loadUniverse();
   const since = await getLastCheckedAt();
   const earliestFilingDate = new Date(since.getTime() - FILING_LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10);
@@ -135,8 +137,8 @@ export async function runPollCycle(universeOverride?: UniverseEntry[]): Promise<
         `  Poller: ${submissionCheckFailures} company/companies could not be checked this cycle - cursor NOT advanced, same window will be re-checked next cycle.`,
       );
     }
-    await completePollerRun(runId, companiesChecked, newFilingsFound);
-    return { companiesChecked, newFilingsFound };
+    await completePollerRun(runId, companiesChecked, newFilingsFound, submissionCheckFailures);
+    return { companiesChecked, newFilingsFound, companiesFailed: submissionCheckFailures };
   } catch (err) {
     await failPollerRun(runId);
     throw err;
