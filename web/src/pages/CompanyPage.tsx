@@ -4,7 +4,8 @@ import { HealthCheck } from '../components/company/HealthCheck';
 import { RiskChanges } from '../components/company/RiskChanges';
 import type { Company, CompanyScores } from '../lib/api';
 import { formatDate, summarize } from '../lib/explain';
-import { useCompanies, useFinancials, useRiskFactorDiff, useScores } from '../lib/useData';
+import { relativeTime } from '../lib/feed';
+import { useCompanies, useFinancials, useRiskFactorDiff, useScores, useStats } from '../lib/useData';
 import { NotFoundPage } from './NotFoundPage';
 
 /** A company's page, addressed by ticker: its health check, finances and risk-warning changes. */
@@ -29,6 +30,7 @@ function CompanyView({ company }: { company: Company }) {
   const scores = useScores(company.cik);
   const financials = useFinancials(company.cik);
   const diff = useRiskFactorDiff(company.cik);
+  const lastPoll = useStats().data?.lastPoll;
   const filed = financials.data?.latestAnnualReportFiled;
   const summary = scores.data ? summarize(company.displayName, verdicts(scores.data)) : null;
 
@@ -57,7 +59,12 @@ function CompanyView({ company }: { company: Company }) {
                 <span className="rounded-lg bg-brand-soft px-2.5 py-1 font-mono text-[15px] font-medium text-link">{company.ticker}</span>
               </div>
               <span className="text-[15px] text-muted">
-                {[company.industry, filed ? `latest annual report filed ${formatDate(filed)}` : null, `SEC company ID ${company.cik}`]
+                {[
+                  company.industry,
+                  filed ? `latest annual report filed ${formatDate(filed)}` : null,
+                  `SEC company ID ${company.cik}`,
+                  lastPoll ? `filings last checked ${relativeTime(lastPoll.finishedAt)}` : null,
+                ]
                   .filter(Boolean)
                   .join(' · ')}
               </span>

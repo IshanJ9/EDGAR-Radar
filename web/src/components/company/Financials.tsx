@@ -56,7 +56,9 @@ function RevenueAndProfit({ revenue, profit }: { revenue: AnnualValue[]; profit:
             {/* The chart is for sighted readers; the table below carries the same numbers for everyone else. */}
             <div className="h-[280px] w-full" aria-hidden="true">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barGap={2} barCategoryGap="28%">
+                {/* Recharts' own keyboard layer is off: the chart is hidden from screen readers, so it must not
+                    take keyboard focus either (axe: aria-hidden-focus). The table below is the accessible version. */}
+                <BarChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} barGap={2} barCategoryGap="28%" accessibilityLayer={false}>
                   <CartesianGrid vertical={false} stroke="#eaecf0" />
                   <XAxis dataKey="year" tickLine={false} axisLine={{ stroke: '#d9dee5' }} tick={{ fill: '#475467', fontSize: 13 }} />
                   <YAxis tickFormatter={axisMoney} tickLine={false} axisLine={false} tick={{ fill: '#475467', fontSize: 12 }} width={64} />
@@ -135,12 +137,13 @@ function OwnsAndOwes({ financials }: { financials: CompanyFinancials }) {
         ) : (
           <dl className="m-0 flex flex-col gap-4">
             {items.map((i) => (
-              <div key={i.label} className="flex flex-col gap-1.5">
-                <div className="flex justify-between gap-4 text-[15px]">
-                  <dt>{i.label}</dt>
-                  <dd className="m-0 font-semibold">{formatMoney(i.value)}</dd>
-                </div>
-                <span aria-hidden="true" className="h-3 rounded-r-[4px]" style={{ width: `${(Math.abs(i.value) / largest) * 100}%`, background: SERIES_COLOR.first }} />
+              // A valid <dl> group: the label, its value, and the bar as a second, hidden description.
+              <div key={i.label} className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-[15px]">
+                <dt>{i.label}</dt>
+                <dd className="m-0 font-semibold">{formatMoney(i.value)}</dd>
+                <dd aria-hidden="true" className="col-span-2 m-0">
+                  <span className="block h-3 rounded-r-[4px]" style={{ width: `${(Math.abs(i.value) / largest) * 100}%`, background: SERIES_COLOR.first }} />
+                </dd>
               </div>
             ))}
           </dl>

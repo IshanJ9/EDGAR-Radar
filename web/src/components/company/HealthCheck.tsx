@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from 'react';
+import { Link } from 'react-router';
 import type { AltmanInputs, BeneishInputs, CompanyScores, PiotroskiInputs, ScoreOutcome } from '../../lib/api';
 import {
   ALTMAN_GAUGE,
@@ -28,9 +29,14 @@ interface Props {
 export function HealthCheck({ scores, industry }: Props) {
   return (
     <section aria-labelledby="health-check" className="flex flex-col gap-[18px]">
-      <h2 id="health-check" className="m-0 font-display text-[26px] font-semibold sm:text-[28px]">
-        Financial health check
-      </h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="health-check" className="m-0 font-display text-[26px] font-semibold sm:text-[28px]">
+          Financial health check
+        </h2>
+        <Link to="/how-it-works#scores" className="text-[15px]">
+          How these scores work
+        </Link>
+      </div>
       {scores.failed ? (
         <LoadFailed what="the health check" onRetry={scores.retry} />
       ) : !scores.data ? (

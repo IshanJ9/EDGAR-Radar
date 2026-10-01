@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   fetchCompanies,
   fetchFinancials,
+  fetchRecentFilings,
   fetchRiskFactorDiff,
   fetchScores,
   fetchStats,
@@ -9,6 +10,7 @@ import {
   type CompanyFinancials,
   type CompanyScores,
   type PipelineStats,
+  type RecentFilings,
   type RiskFactorDiff,
 } from './api';
 
@@ -72,6 +74,7 @@ export const useCompanies = () => useCached<Company[]>('companies', fetchCompani
 export const useStats = () => useCached<PipelineStats>('stats', fetchStats);
 export const useScores = (cik: string) => useCached<CompanyScores>(`scores:${cik}`, () => fetchScores(cik));
 export const useFinancials = (cik: string) => useCached<CompanyFinancials>(`financials:${cik}`, () => fetchFinancials(cik));
+export const useRecentFilings = (hours: number) => useCached<RecentFilings>(`recent-filings:${hours}`, () => fetchRecentFilings(hours));
 export const useRiskFactorDiff = (cik: string) => useCached<RiskFactorDiff | null>(`risk-factor-diff:${cik}`, () => fetchRiskFactorDiff(cik));
 
 /** Tests only: forget everything loaded so far. */

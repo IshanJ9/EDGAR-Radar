@@ -1,3 +1,4 @@
+import type { Filing, FilingCategory } from './feed';
 import { displayName } from './names';
 
 /**
@@ -155,3 +156,21 @@ export async function fetchRiskFactorDiff(cik: string): Promise<RiskFactorDiff |
     throw err;
   }
 }
+
+// --- The latest-filings feed (F4-F5).
+
+export interface RecentFilings {
+  windowHours: number;
+  /** Every filing in the window, including the routine paperwork left out of `filings`. */
+  total: number;
+  countsByCategory: Partial<Record<FilingCategory, number>>;
+  filings: Filing[];
+}
+
+/**
+ * The filings of the last `hours`, newest first. Banks' bond prospectuses
+ * ("offering", most of the volume on a typical day) are left out of the list
+ * and only counted, so the page can sum them up in one line.
+ */
+export const fetchRecentFilings = (hours: number) => getJson<RecentFilings>(`/filings/recent?hours=${hours}&exclude=offering`);
+

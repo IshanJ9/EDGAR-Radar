@@ -4,7 +4,8 @@
  * state-of-incorporation suffix ("APPLIED MATERIALS INC /DE"). Title-casing
  * fixes most; the rest - acronyms, brand capitals, apostrophes and SEC's
  * surname-first order - are spelled out below, checked by hand against all
- * 196 names on 2026-10-01.
+ * 196 names on 2026-10-01. Four more SEC writes in mixed case but with a word
+ * in capitals ("PROCTER & GAMBLE Co"), found on the live feed on 2026-10-02.
  */
 const SPELLED_OUT: Record<string, string> = {
   AMZN: 'Amazon.com Inc',
@@ -16,6 +17,7 @@ const SPELLED_OUT: Record<string, string> = {
   CME: 'CME Group Inc.',
   COP: 'ConocoPhillips',
   CSX: 'CSX Corp',
+  CVS: 'CVS Health Corp',
   DHI: 'D.R. Horton Inc',
   EBAY: 'eBay Inc',
   EOG: 'EOG Resources Inc',
@@ -25,6 +27,7 @@ const SPELLED_OUT: Record<string, string> = {
   KLAC: 'KLA Corp',
   KMB: 'Kimberly-Clark Corp',
   KO: 'Coca-Cola Co',
+  LLY: 'Eli Lilly & Co',
   LOW: "Lowe's Companies Inc",
   MCD: "McDonald's Corp",
   MCO: "Moody's Corp",
@@ -32,9 +35,11 @@ const SPELLED_OUT: Record<string, string> = {
   MRSH: 'Marsh & McLennan Companies, Inc.',
   NEE: 'NextEra Energy Inc',
   NEM: 'Newmont Corp',
+  NKE: 'Nike, Inc.',
   NVDA: 'NVIDIA Corp',
   ORLY: "O'Reilly Automotive Inc",
   PEP: 'PepsiCo Inc',
+  PG: 'Procter & Gamble Co',
   PNC: 'PNC Financial Services Group, Inc.',
   SCHW: 'Charles Schwab Corp',
   SHW: 'Sherwin-Williams Co',

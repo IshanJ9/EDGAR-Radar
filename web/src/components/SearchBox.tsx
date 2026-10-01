@@ -13,6 +13,8 @@ interface Props {
   companies: Company[] | null;
   /** True when the company list could not be loaded. */
   failed: boolean;
+  /** 'hero' on the home page; 'compact' in the header of every other page. */
+  variant?: 'hero' | 'compact';
 }
 
 /**
@@ -21,7 +23,8 @@ interface Props {
  * Escape clears; "/" anywhere on the page jumps here. Searching is entirely
  * in the browser, over the 196-company list loaded once.
  */
-export function SearchBox({ companies, failed }: Props) {
+export function SearchBox({ companies, failed, variant = 'hero' }: Props) {
+  const hero = variant === 'hero';
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -70,8 +73,14 @@ export function SearchBox({ companies, failed }: Props) {
       <label htmlFor={`${listId}-input`} className="sr-only">
         Search for a company
       </label>
-      <div className="flex h-[68px] items-center gap-3.5 rounded-input border-2 border-brand bg-surface px-[22px] shadow-[0_10px_30px_rgba(13,27,42,0.10)]">
-        <SearchIcon className="size-6 shrink-0 text-muted" />
+      <div
+        className={
+          hero
+            ? 'flex h-[68px] items-center gap-3.5 rounded-input border-2 border-brand bg-surface px-[22px] shadow-[0_10px_30px_rgba(13,27,42,0.10)]'
+            : 'flex h-11 items-center gap-2.5 rounded-[10px] border border-line bg-canvas px-3.5 focus-within:border-brand'
+        }
+      >
+        <SearchIcon className={hero ? 'size-6 shrink-0 text-muted' : 'size-[18px] shrink-0 text-muted'} />
         <input
           ref={inputRef}
           id={`${listId}-input`}
@@ -83,14 +92,14 @@ export function SearchBox({ companies, failed }: Props) {
           aria-activedescendant={showResults && active >= 0 ? optionId(active) : undefined}
           autoComplete="off"
           spellCheck={false}
-          placeholder="Search a company, e.g. Apple or TSLA"
+          placeholder={hero ? 'Search a company, e.g. Apple or TSLA' : 'Search another company'}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
             setActive(-1);
           }}
           onKeyDown={onKeyDown}
-          className="min-w-0 grow bg-transparent text-lg text-ink outline-none placeholder:text-faint sm:text-xl"
+          className={`min-w-0 grow bg-transparent text-ink outline-none placeholder:text-faint ${hero ? 'text-lg sm:text-xl' : 'text-[15px]'}`}
         />
         {query ? (
           <button
@@ -101,12 +110,12 @@ export function SearchBox({ companies, failed }: Props) {
               setActive(-1);
               inputRef.current?.focus();
             }}
-            className="flex size-11 shrink-0 items-center justify-center rounded-[10px] text-muted hover:bg-canvas"
+            className={`flex shrink-0 items-center justify-center rounded-[10px] text-muted hover:bg-canvas ${hero ? 'size-11' : 'size-8'}`}
           >
             <ClearIcon className="size-5" />
           </button>
         ) : (
-          <kbd className="hidden rounded-md border border-line px-2 py-0.5 font-mono text-[13px] text-faint sm:block">/</kbd>
+          hero && <kbd className="hidden rounded-md border border-line px-2 py-0.5 font-mono text-[13px] text-faint sm:block">/</kbd>
         )}
       </div>
 

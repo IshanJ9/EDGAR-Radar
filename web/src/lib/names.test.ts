@@ -25,4 +25,11 @@ describe('displayName', () => {
     expect(displayName('SCHW', 'SCHWAB CHARLES CORP')).toBe('Charles Schwab Corp');
     expect(displayName('T', 'AT&T INC.')).toBe('AT&T Inc.');
   });
+
+  test('names SEC writes in mixed case but with a word in capitals are spelled out too (found on the live feed)', () => {
+    expect(displayName('PG', 'PROCTER & GAMBLE Co')).toBe('Procter & Gamble Co');
+    expect(displayName('LLY', 'ELI LILLY & Co')).toBe('Eli Lilly & Co');
+    expect(displayName('CVS', 'CVS HEALTH Corp')).toBe('CVS Health Corp');
+    expect(displayName('NKE', 'NIKE, Inc.')).toBe('Nike, Inc.');
+  });
 });
