@@ -55,6 +55,8 @@ export const cacheKeys = {
   // invalidated - the list because fact writes are constant on a busy day and
   // it is expensive to rebuild - so the TTL bounds how stale they get.
   scores: (cik: string) => `v1:scores:${padCik(cik)}`,
+  // F3: the company page's charts - cleared with the scores on a fact write.
+  financials: (cik: string) => `v1:financials:${padCik(cik)}`,
   companyList: 'v1:company-list',
   stats: 'v1:stats',
   recentFilings: (hours: number, exclude: string[]) => `v1:recent-filings:${hours}:${exclude.join(',')}`,

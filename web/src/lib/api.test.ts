@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
-import { ApiError, fetchCompanies, fetchStats } from './api';
+import { ApiError, fetchCompanies, fetchFinancials, fetchRiskFactorDiff, fetchScores, fetchStats } from './api';
 
 function respondWith(status: number, body: unknown) {
   const fetchMock = vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
@@ -47,5 +47,34 @@ describe('the API client', () => {
     vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))));
 
     await expect(fetchStats()).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+// F3: the company page's data.
+describe('company page requests', () => {
+  test('scores, financials and the risk-factor diff each come from their own endpoint', async () => {
+    const fetchMock = respondWith(200, {});
+
+    await fetchScores('0000320193');
+    await fetchFinancials('0000320193');
+    await fetchRiskFactorDiff('0000320193');
+
+    expect(fetchMock.mock.calls.map((call) => (call as unknown[])[0])).toEqual([
+      '/api/companies/0000320193/scores',
+      '/api/companies/0000320193/financials',
+      '/api/companies/0000320193/risk-factor-diff',
+    ]);
+  });
+
+  test('no stored risk-factor diff (404) is null - an expected state, not an error', async () => {
+    respondWith(404, { error: 'No risk-factor comparison stored for this company yet.' });
+
+    await expect(fetchRiskFactorDiff('0000040545')).resolves.toBeNull();
+  });
+
+  test('any other failure of the diff is still an error', async () => {
+    respondWith(500, { error: 'Internal server error' });
+
+    await expect(fetchRiskFactorDiff('0000320193')).rejects.toBeInstanceOf(ApiError);
   });
 });

@@ -1510,3 +1510,54 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - **README:** now leads with the live site.
 
   **Logged, not changed:** an unknown address answers **HTTP 200** with the not-found page drawn by the app, the usual single-page-app "soft 404". Search engines may index such addresses; worth revisiting in F5 (page titles and link previews).
+
+- [ ] Hardening, step 3, F3 — **The company page.** Started 2026-10-02 at the user's go-ahead ("continue" after F2), from the approved mockups (Company, CompanyNoData). Built and tested locally; ticked after deploy and a check on the live site.
+
+  **Backend: `GET /companies/:cik/financials`** (src/companyFinancials.ts, the route in src/routes/companies.ts).
+  - **Why an endpoint rather than the facts:** the raw facts name each figure by its SEC tag (Apple's revenue is `RevenueFromContractWithCustomerExcludingAssessedTax`, other companies use other tags), and choosing the right one is the scores' existing logic. Repeating it in the browser would have meant two copies of the tag lists to keep in step.
+  - **What it returns:** five years, oldest first, of revenue, net income, total assets, total liabilities, long-term debt and operating cash flow, all from `getAnnualValues` with the scores' own tag lists, so a chart never disagrees with a score; plus when the latest annual report was filed (`getLatestAnnualReportFiledDate`: the newest filed date among the company's 10-K facts).
+  - **Liabilities follow F1b-3's rule:** if the reported total is missing or older, assets minus equity is used for every year, flagged `liabilitiesDerived`.
+  - **Stored data only:** a company not stored is a 404, never a fetch from SEC. Cached like the scores, under a new key `financials(cik)`, and `upsertFact` now clears it with the facts and scores.
+
+  **The page** (`web/src/pages/CompanyPage.tsx` and `web/src/components/company/`), laid out as in the approved mockup:
+  - **Header:** the readable name, the ticker, the industry, when the latest annual report was filed, the SEC company ID, and a link to the company's 10-Ks on SEC.gov.
+  - **"In short":** one sentence built from the three verdicts, positives first and any concern after "but". For Apple: "Apple Inc. passes 8 of 9 financial-strength checks and shows no accounting red flags, but its bankruptcy-risk score is in the caution zone."
+  - **Financial health check:** a card per score.
+    - **Bankruptcy risk (Altman Z″):** Safe, Caution or High risk; a gauge from 0 to 4; and three reasons from its inputs (working capital, retained earnings, operating profit).
+    - **Financial strength (Piotroski F):** Strong, Moderate or Weak; nine segments; and the nine checks in plain words, passed first.
+    - **Accounting red flags (Beneish M):** None found, or Worth a closer look; a gauge from −4 to −1 with the −2.22 threshold; and the measures above the average of the companies Beneish found had manipulated earnings, or "moved within normal ranges".
+    - **Calculated figures are named** (gross profit as revenue minus cost of revenue, SG&A as its two parts, liabilities as assets minus equity).
+    - **A score that cannot be calculated** says why in plain words: the backend's reason, such as `missing for: currentAssets, …`, becomes "short-term assets … aren't reported".
+    - **Banks, insurers, brokers and property trusts** with no score at all get one explanation that the scores don't fit them, as in the mockup, instead of three empty cards.
+  - **Revenue and profit:** a Recharts bar chart of five years, with a hidden table carrying the same numbers for screen readers, plus "What it owns and owes" for the latest year.
+  - **What changed in its risk warnings:** the two filing dates, the unchanged count, and New / Removed / Reworded tabs (keyboard-operable). Each shows five passages, then "Show more"; long passages are clipped until "Read the full paragraph"; reworded passages show last year's wording beneath. With no stored comparison it explains why, rather than showing an error.
+  - **Loading and errors per section:** each section loads on its own, shows "Loading …", and on a failure says so with "Try again" while the rest of the page works. An unknown ticker is the 404 page.
+  - **Not built from the mockup** (each a later decision): the "latest quarter" box, "last checked N minutes ago", and the header search on company pages.
+
+  **The chart, checked against the data-visualisation guidance:**
+  - **Colours:** the mockup's navy and amber failed the palette validator (amber's contrast on white is 1.77:1, and the pair sits outside the lightness band). The reference categorical slots 1 and 2, blue `#2a78d6` for revenue and orange `#eb6834` for profit, pass all six checks on white.
+  - **Marks:** one axis (both are dollars); bars no wider than 24 px with 4 px rounded tops; a legend and a hover tooltip.
+  - **Found by looking at the rendered chart, and fixed:** Recharts sorts legend and tooltip items alphabetically (Profit before Revenue, the reverse of the bars), and colours their text with the series colours. Both are now in the bars' order, in text colour. Axis labels lost a needless ".0" ($150B).
+  - **Score gauges** use the reserved status colours, always beside their text labels.
+
+  **Bundle:** Recharts would have taken the site's JavaScript from 87 KB to 201 KB gzipped, so the company page is now a separate chunk loaded when a company is opened. The home page stays at 87.5 KB; the company page adds 114.9 KB. The site's production dependencies audit at 0 vulnerabilities.
+
+  **Tests:**
+  - **Backend:** `companyFinancials.test.ts` (5: five years oldest first from the scores' tag lists; the filed date; reported liabilities as reported; stale liabilities derived for every year; empty series rather than an error). The route in `publicApi.test.ts` (3: served; a company not stored is a 404 with no SEC request; a bad CIK is a 400). The cache test now expects `financials` to be cleared. Integration: the filed-date query (2: the newest 10-K date, a 10-Q not counted; null with no 10-K facts). All red first. **270/270 unit tests** (also with one worker), **37/37 integration**; `tsc`, ESLint and the build clean.
+  - **Frontend:**
+    - `explain.test.ts`, 20 tests covering every sentence and band, including rounding.
+    - `CompanyPage.test.tsx`, 11 page tests with data cut down from the production API's real answers for Apple, JPMorgan and GE: the header, the summary, the three cards, the chart's table, "owns and owes", the risk tabs and paging, the bank explanation, the per-score reasons, no comparison, a failed section with a working retry, and loading.
+    - API and data-hook tests: 3 for the new requests (a 404 diff is null, other failures are errors) and 2 for per-company data (another company never shows the previous one's data; retry after a failure).
+    - **Totals:** **71/71**; oxlint clean (three warnings found and fixed: constants in a component file, and a ref written during render).
+  - **Two real bugs found by the tests:**
+    - **Rounding:** `toFixed` showed Apple's Beneish score as −2.29 (2.295 is stored as 2.29499…). The fix rounds half away from zero.
+    - **Wording:** GE's Altman reason ("No single fiscal year is available…") fell through to the generic sentence; it now has its own.
+  - **Mutation checks: 16 of 16 caught, after one test was strengthened.** The frontend's 11 cover a sentence inverted, the "but" clause dropped, banks not recognised, a 404 diff treated as an error, another company's data shown, paging removed, checks unordered, the rounding nudge removed, the red-flag threshold reversed, the bank notice removed, and "no comparison" shown as loading. **The rounding one survived** until values that need the nudge were added: 1.005 × 100 is 100.49999…, and the original test used only −2.295, which works either way. The backend's 5 cover financials for an unstored company, stale liabilities never derived, newest-first series, a fact write leaving financials cached, and the filed date counting 10-Qs, the last checked by the integration suite. A no-op control mutation survived, as it should.
+  - **In a real browser, against the production API:**
+    - **Setup:** the local site was proxied to production, and Apple's financials, which the deployed API doesn't serve yet, were taken from its real stored facts through a temporary config, deleted afterwards and never committed.
+    - **Apple at desktop width:** the page renders as in the mockup, with "Caution 2.31" marked on the amber zone, "Strong 8/9", and "None found −2.30" on the Normal zone; the chart and tooltip show fiscal 2021–2025; and the risk tabs read New (3), Removed (19), Reworded (38).
+    - **Other companies, at phone width (375 px):** JPMorgan shows the banks-and-insurers explanation; GE shows a reason per score; both explain there is no risk comparison yet, and their financials section shows its error with "Try again" (no local financials for them). No horizontal scrolling; only the tab strip scrolls, within itself.
+    - **Wording:** GE's cards said a score "appears automatically once the figures are filed", which over-promises for a company that stopped reporting operating income. It now says "if the missing figures are filed".
+
+  **Next:** deploy (the API gains `/financials`; Vercel rebuilds the site), then check on https://edgar-radar.vercel.app that Apple, JPMorgan, GE and a derived-liabilities company (Danaher) load with real financials, and the bundle is split as built.
+
