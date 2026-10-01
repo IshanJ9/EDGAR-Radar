@@ -1583,3 +1583,64 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - **Logged, not changed:** a company with no stored risk comparison gets the API's expected 404, which browsers log in the developer console as "Failed to load resource: 404". Visitors never see it, and the page handles it as designed.
   - **Still open from the mockup, not built:** the "latest quarter" box, "last checked N minutes ago", and a header search on company pages.
 
+- [ ] Hardening, step 3, F4 + F5 — **The rest of the website: "How it works", "All companies", "Latest filings", navigation, and polish.** Built 2026-10-02 in one push **at the user's explicit request** ("complete the entire frontend for next push"), a deliberate exception to the one-step-at-a-time rule. Verified locally against the production API; ticked after deploy and a live check. F5's real test with a non-technical person is the user's part and is still open.
+
+  **What was built** (all from the approved mockups):
+  - **Navigation:**
+    - **Header:** links to All companies, Latest filings and How it works, with the current page in bold.
+    - **Phone:** the links fold into a **Menu** button (`aria-expanded`), which closes when a link is followed. It remembers which page it was opened on, so no effect is needed (oxlint flagged the first version, which reset state inside an effect).
+    - **Search:** every page except the home page carries a **compact search in the header**: one instance, which wraps onto its own row on a phone. The home page keeps its single large search.
+    - **Footer:** links to How it works.
+  - **All companies** (`/companies`):
+    - **Table:** all 196 alphabetically, each with its three ratings as a short verdict and its number ("Caution 2.31", "Strong 8/9", "Look closer −1.50").
+    - **Unscored:** "Not scored (bank)" for financial companies, otherwise "Not enough data".
+    - **Controls:** filter by name or ticker (the home search's matching); "All 196 / All three scores (63) / Any caution or flag"; 25 a page with Previous and Next.
+    - **Coverage note:** from the live list (live: "63 of 196 have all three scores and 33 have none").
+  - **Latest filings** (`/filings`):
+    - **Lines:** the last 24 hours, newest first, one line per company and kind of filing ("Simon Property Group SPG - 10 insider trades reported"), linked to the company.
+    - **Bond paperwork** is counted, not listed (`exclude=offering`): live, "403 routine offers of notes and bonds".
+    - **Filters:** Everything, Major events, Insider trades, Annual and quarterly reports, Mergers.
+    - **Widening:** "Show the last 7 days".
+    - **Side panel:** filings found and the last poll ("15 min ago"), plus what the labels mean.
+  - **How it works** (`/how-it-works`):
+    - **The six steps:** Watch, Read, Check, Score, Compare, Guard.
+    - **"Right now":** live last check, filings in 24 hours, figures on record, and "figures corrected in last night's cross-check". The nightly reconciliation rewrites each discrepancy from SEC's bulk data (src/reconciliation.ts), so "corrected" is accurate.
+    - **Where the data comes from.**
+    - **`#scores`:** the three scores in plain English with their thresholds, linked from every company page's "How these scores work".
+    - **"For the technically curious":** "≤ 10/s", "4,165/s requests served from cache in a load test" (Phase 7's best-case, cached figure, worded as such), "1 alert per outage", "400+ automated tests" (270 unit + 37 integration + 110 frontend = 417).
+  - **Company page:** "filings last checked N min ago" in the header line, and "How these scores work".
+  - **Page titles and descriptions** on every page.
+  - **Link previews:**
+    - **Tags:** Open Graph and `twitter:card` in `index.html`, because crawlers don't run JavaScript.
+    - **Image:** a 1200×630 `og-image.png` drawn as SVG in the site's colours and converted with `sharp` in a scratch folder (not a project dependency); a test checks the tags and the PNG's size.
+  - **The not-found page** carries `<meta name="robots" content="noindex">` (F2's logged soft-404). Plus `robots.txt`.
+
+  **Found while checking against live data, and fixed (each with a test, red first):**
+  - **Names SEC writes in mixed case with a word in capitals:** "PROCTER & GAMBLE Co", "ELI LILLY & Co", "CVS HEALTH Corp" and "NIKE, Inc." slipped past F2's all-capitals rule. A scan of all 196 found these four (MSCI is a real acronym); they are now spelled out.
+  - **Form SD** ("Filed a form SD") reads "Filed its conflict-minerals report". It was the only "other" form in a week of the live feed.
+
+  **Accessibility:**
+  - **In the tests:** `accessibility.test.tsx` runs **axe-core** (WCAG 2.1 A/AA plus best practice) on all six pages with real-shaped data. It found one real error: "What it owns and owes" nested its label and value pairs too deep inside the `<dl>`. Each item is now a valid pair, with the bar as a second, hidden `<dd>`. All six pages are now clean.
+  - **In a real browser:** jsdom computes no colours or layout, so axe also ran in the browser on 8 pages (home, all companies, filings, how it works, Apple, JPMorgan, GE, not found):
+    - **Colour contrast:** 0 violations at 375 px and at 1280 px.
+    - **The full A/AA set at desktop** found one more real problem the tests could not: **Recharts 3 makes the chart's `<svg>` keyboard-focusable** (`tabindex="0"`, its "accessibility layer") inside the wrapper hidden from screen readers. A keyboard user could tab into something their screen reader can't describe. It is off now (`accessibilityLayer={false}`); the table beside the chart is the accessible version. All pages are clean.
+  - **Also:** one search box per page; landmark regions and labels.
+
+  **Mobile:** all seven page types at 375 px - home, all companies, filings, how it works, Apple, JPMorgan, not found - **0 px of horizontal scrolling**, each with its own title. The phone menu was checked by screenshot.
+
+  **Tests: 110 frontend tests in 13 files** (73 before):
+  - **New logic:** `feed.test.ts` (grouping, sentences, filters, relative times) and `ratings.test.ts` (chips, concerns, coverage).
+  - **Pages:** `SitePages.test.tsx`, 19 page tests covering navigation, the three new pages, the company-page additions and `noindex`; 18 were red first, and the one already passing asserts the home page keeps a single search box.
+  - **Accessibility:** `accessibility.test.tsx`, the six axe checks.
+  - **Link previews:** `tests/linkPreview.test.ts`, under the Node tsconfig, because it reads files.
+  - **Totals:** oxlint and `tsc` clean; `npm audit --omit=dev` 0.
+  - **Mutation checks: 13 of 13 caught:**
+    - filings not grouped; the insider count dropped; feed filters ignored; days shown as hours;
+    - bankruptcy caution not a concern; "none" miscounted; no paging;
+    - bond paperwork listed; two search boxes on the home page;
+    - the 404 indexable; the `<dl>` made invalid (caught by axe); a mixed-case name not spelled out; the `#scores` anchor removed.
+
+  **Size:** the main bundle is 96.5 KB gzipped (87.5 KB before, now with three more pages); the company page's chunk is 112.8 KB. The backend is unchanged (270/270, `tsc` and ESLint clean).
+
+  **Next:** deploy, then check every page on https://edgar-radar.vercel.app, including a link preview of the site URL. F5's last item is the user's: watch a non-technical person use the site unaided and note what confuses them, then fix it.
+

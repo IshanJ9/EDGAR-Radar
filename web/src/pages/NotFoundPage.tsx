@@ -4,6 +4,8 @@ export function NotFoundPage() {
   return (
     <section className="mx-auto flex max-w-[1200px] flex-col items-start gap-4 px-4 py-24 sm:px-8">
       <title>Page not found - EDGAR Radar</title>
+      {/* Vercel serves the app for every path, so this page answers HTTP 200; this keeps it out of search results. */}
+      <meta name="robots" content="noindex" />
       <h1 className="m-0 font-display text-4xl font-bold">Page not found</h1>
       <p className="m-0 max-w-[560px] text-lg leading-relaxed text-muted">
         There's nothing at this address. If you were looking for a company, search for it by name or stock ticker.

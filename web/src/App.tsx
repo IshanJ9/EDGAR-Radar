@@ -1,7 +1,10 @@
 import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router';
 import { Layout } from './components/Layout';
+import { CompaniesPage } from './pages/CompaniesPage';
+import { FilingsPage } from './pages/FilingsPage';
 import { HomePage } from './pages/HomePage';
+import { HowItWorksPage } from './pages/HowItWorksPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 // The company page carries the charting library (Recharts, ~110 KB gzipped);
@@ -13,6 +16,9 @@ export function App() {
     <Layout>
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/companies" element={<CompaniesPage />} />
+        <Route path="/filings" element={<FilingsPage />} />
+        <Route path="/how-it-works" element={<HowItWorksPage />} />
         <Route
           path="/company/:ticker"
           element={
