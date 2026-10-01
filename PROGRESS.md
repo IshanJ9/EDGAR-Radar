@@ -1382,3 +1382,54 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - **Recommendation:** fix the extraction's end detection and recompute these 62 before the frontend shows diffs. A recompute needs no SEC requests, because both texts are stored. Not done: it is a separate step, for the user to decide.
 
   **Not yet exercised in production:** the parser worker computing a diff for a **newly filed** 10-K. None has arrived since this deploy, and most companies with September or October year ends file in November or December. Its unit tests cover it; the first real one will show in the parser worker's log as `Risk-factor diff`.
+
+- [ ] Hardening, step 3, F1c-2 — **Fix the Risk Factors extraction, then recompute every stored diff.** The user's choice after F1c's production check (2026-10-01), before the frontend. Built and tested locally; ticked after deploy, the recompute and a production check.
+
+  **Diagnosed on the 377 stored 10-Ks, inside the production image, before changing anything.** The old rule took the **last** line matching "Item 1A. Risk Factors" and ended at the first "Item 1B" or "Item 2" after it:
+
+  | Old result | Filings | Why |
+  |---|---|---|
+  | Ran to the end of the filing | **122** | The last match was a cross-reference after Item 2 (Alphabet: "see Part I, Item 1A Risk Factors and Legal Matters in Note 10"; Nvidia: "Refer to Item 1A. Risk Factors for additional information"), with no end heading after it. |
+  | A few characters | **30** | The only match the pattern accepted was the table of contents, so the "section" was a page number ("11", "24-31"). |
+  | Nothing | **13** | The heading used a separator the pattern did not allow: "Item 1A**:** Risk Factors" (Comcast, AMAT, Realty Income), "ITEM 1A **-** RISK FACTORS" (Global Payments), "ITEM 1A **\|** Risk Factors" (AIG). |
+  | Usable | **212** | |
+
+  **The new rule** (src/riskFactors.ts):
+  - **A heading must start a line.** Cross-references sit mid-sentence; every real heading started a line. Any of `. : - – — |` may separate "Item 1A" from "Risk Factors".
+  - **A section ends at the next line-starting Item 1B, 1C or 2.** A heading with no such end is rejected, so a section can never run to the end of a filing.
+  - **Sections under 1,000 characters are rejected:** table-of-contents entries, and notes that the section is incorporated by reference (BNY Mellon, US Bancorp). Real sections are at least ~13,000 characters, 5% of the filing.
+  - **The first qualifying heading wins.** "Longest wins" was tried first; on the stored filings it never differed from "first" (9 filings have more than one qualifying heading, a running page header, and in all 9 the first is the longest), so the simpler rule was kept.
+  - **Result on the same 377 texts: 363 usable (212 before), 0 running to the end (122), 0 page-number fragments (30), 14 null (13).** The compiled code was checked against the production texts, not only the prototype. Samples start and end at the right places: Alphabet's section is 85 KB (it was 209 KB) and ends with its last risk factor; Nvidia, Comcast, AIG, Global Payments and Apple likewise. The median section is 17% of its filing.
+
+  **Still null, 7 companies** (both 10-Ks each): **GE, Intel, McDonald's and Honeywell** lay the 10-K out as an index ("Item 1A. Risk Factors … Pages 37-51") and head the section just "Risk Factors"; **BNY Mellon and US Bancorp** incorporate it by reference from another document; **ICE**'s stored text contains no "Item 1A" at all. Before, the first four had diffs of page-number fragments, so null is the honest answer. Handling an index layout is possible but a separate decision.
+
+  **Recompute with no SEC requests.** `recomputeRiskFactorDiffFromStoredTexts(cik)` diffs a company's two latest **stored** 10-K texts, stores the result, and **deletes** the stored diff if the section no longer extracts (a diff of the wrong text is worse than none; the API then answers 404). It is run by `node dist/scripts/backfillRiskFactorDiffs.js --recompute`, which makes no SEC requests, so the poller can keep running. New queries: `getLatestFilingTexts` and `deleteRiskFactorDiff`, which also clears the cached response.
+
+  **Expected after the recompute** (estimated from the comparison above, before it is run): AMAT, ED, EMR, INTU, O and XEL, previously not extractable, get diffs; GE, Intel, McDonald's, Honeywell, BNY Mellon and US Bancorp lose their meaningless ones; and the 62 diffs that ran to the end of the filing become diffs of the real section.
+
+  **Tests:**
+  - **Unit:** `riskFactors.test.ts` grows from 5 to 16 tests:
+    - a cross-reference after the real section;
+    - a cross-reference before it (in Item 1 Business);
+    - four heading separators;
+    - ending at Item 1C;
+    - no end heading → null;
+    - an index-only 10-K → null;
+    - incorporated by reference → null;
+    - a heading repeated as a page header.
+
+    The 5 existing tests keep their assertions; their fixtures gained realistic padding to clear the new minimum length. Of the new tests, 9 failed on the old code. Two pass on the old code too (the page-header test, and the "before" cross-reference test) and guard against the new code regressing; both were added because a mutation survived without them.
+  - **Unit, the recompute:** 3 tests in `riskFactorDiffService.test.ts` (no SEC request; deletes a diff whose section no longer extracts; not enough stored texts deletes nothing), all red first.
+  - **Integration:** 2 more: `deleteRiskFactorDiff` deletes only that comparison; `getLatestFilingTexts` returns the newest full texts of the form, newest first, with `YYYY-MM-DD` dates.
+  - **Totals:** **262/262 unit tests** (also with one worker), **35/35 integration**; `tsc`, ESLint and the build clean.
+  - **Mutation checks: 8 of 8 caught, after two tests were added:**
+    - a heading need not start a line (survived until the "before" cross-reference test was added);
+    - no colon separator;
+    - no end → run to the end;
+    - no minimum length;
+    - Item 1C not an end;
+    - the last qualifying heading wins (survived until the page-header test was added);
+    - the recompute keeps a stale diff;
+    - the recompute swaps old and new.
+
+  **Next:** deploy; run the recompute in production (no SEC requests, ~75 min of CPU at F1c's pace); check the counts against the expectation above, and that Alphabet's and Nvidia's added/removed counts are no longer lopsided.

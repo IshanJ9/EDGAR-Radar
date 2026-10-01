@@ -142,8 +142,8 @@ The image build downloads the embedding model once, from Hugging Face.
 
 ```bash
 npm install
-npm test                  # 248 unit tests; no network, SEC is mocked with nock
-npm run test:integration  # 33 tests against a throwaway Postgres in Docker
+npm test                  # 262 unit tests; no network, SEC is mocked with nock
+npm run test:integration  # 35 tests against a throwaway Postgres in Docker
 npm run lint
 ```
 

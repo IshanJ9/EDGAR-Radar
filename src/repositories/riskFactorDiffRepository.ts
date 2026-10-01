@@ -42,6 +42,12 @@ export async function hasRiskFactorDiff(cik: string, currentAccn: string, priorA
   return result.rows.length > 0;
 }
 
+/** Deletes one stored comparison - used when a recompute finds its Risk Factors section no longer extracts (F1c-2). */
+export async function deleteRiskFactorDiff(cik: string, currentAccn: string, priorAccn: string): Promise<void> {
+  await pool.query('DELETE FROM filing_risk_factor_diffs WHERE cik = $1 AND current_accn = $2 AND prior_accn = $3', [padCik(cik), currentAccn, priorAccn]);
+  await responseCache.invalidate(cacheKeys.riskFactorDiff(cik));
+}
+
 /** Returns the most recently computed diff for a company (by current_filing_date), or null if none exists yet. */
 export async function getLatestRiskFactorDiff(cik: string, db: Queryable = pool): Promise<StoredRiskFactorDiff | null> {
   const result = await db.query(

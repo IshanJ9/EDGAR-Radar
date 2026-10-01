@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { pool } from '../src/db';
-import { computeLatestRiskFactorDiff, RiskFactorDiffOutcome } from '../src/riskFactorDiffService';
+import { computeLatestRiskFactorDiff, recomputeRiskFactorDiffFromStoredTexts, RiskFactorDiffOutcome } from '../src/riskFactorDiffService';
 import { loadUniverse } from '../src/universe';
 
 /**
@@ -19,8 +19,16 @@ import { loadUniverse } from '../src/universe';
  * Run it inside the SEC budget: in production, as a one-off container of the
  * poller service (its 2/s share) with the poller stopped.
  * Usage: node dist/scripts/backfillRiskFactorDiffs.js
+ *
+ * `--recompute` (F1c-2) instead recomputes every company's diff from its two
+ * latest STORED 10-K texts - no SEC request at all, so the poller can keep
+ * running - for use after a change to how diffs are made. A diff whose Risk
+ * Factors section no longer extracts is deleted.
+ * Usage: node dist/scripts/backfillRiskFactorDiffs.js --recompute
  */
 async function main() {
+  const recompute = process.argv.includes('--recompute');
+  const run = recompute ? recomputeRiskFactorDiffFromStoredTexts : computeLatestRiskFactorDiff;
   const universe = loadUniverse();
   const counts: Record<RiskFactorDiffOutcome['status'] | 'failed', number> = {
     computed: 0,
@@ -34,7 +42,7 @@ async function main() {
   for (const [i, company] of universe.entries()) {
     const t0 = Date.now();
     try {
-      const outcome = await computeLatestRiskFactorDiff(company.cik);
+      const outcome = await run(company.cik);
       counts[outcome.status] += 1;
       const detail = outcome.status === 'not-enough-history' ? ` - ${outcome.reason}` : '';
       console.log(`  ${i + 1}/${universe.length} ${company.ticker}: ${outcome.status}${detail} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
@@ -45,7 +53,7 @@ async function main() {
   }
 
   const minutes = ((Date.now() - started) / 60000).toFixed(1);
-  console.log(`Done in ${minutes} min. ${Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(', ')}.`);
+  console.log(`${recompute ? 'Recompute' : 'Backfill'} done in ${minutes} min. ${Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(', ')}.`);
   await pool.end();
   process.exit(counts.failed > 0 ? 1 : 0);
 }

@@ -86,6 +86,22 @@ export async function getFilingTextsByAccn(cik: string, accns: string[]): Promis
   return new Map(result.rows.map((row) => [row.accn, { accn: row.accn, filingDate: row.filing_date, content: row.content }]));
 }
 
+/**
+ * A company's `count` most recently filed stored texts of these forms, newest
+ * first. Used to recompute diffs from stored 10-Ks with no SEC request
+ * (post-Phase 7 hardening, step 3, F1c-2).
+ */
+export async function getLatestFilingTexts(cik: string, formTypes: string[], count: number): Promise<StoredFilingText[]> {
+  const result = await pool.query(
+    `SELECT accn, filing_date::text AS filing_date, content FROM filing_text_sections
+     WHERE cik = $1 AND form = ANY($2) AND section_name = 'full_document'
+     ORDER BY filing_date DESC
+     LIMIT $3`,
+    [padCik(cik), formTypes, count],
+  );
+  return result.rows.map((row) => ({ accn: row.accn, filingDate: row.filing_date, content: row.content }));
+}
+
 export interface FilingTextSearchResult {
   cik: string;
   accn: string;

@@ -13,20 +13,22 @@ jest.mock('../sec', () => ({
 jest.mock('../repositories/filingTextRepository', () => ({
   ingestFilingText: jest.fn(),
   getFilingTextsByAccn: jest.fn(),
+  getLatestFilingTexts: jest.fn(),
 }));
 jest.mock('../repositories/riskFactorDiffRepository', () => ({
   getLatestRiskFactorDiff: jest.fn(),
   hasRiskFactorDiff: jest.fn(),
   upsertRiskFactorDiff: jest.fn(),
+  deleteRiskFactorDiff: jest.fn(),
 }));
 jest.mock('../riskFactorDiff', () => ({ diffRiskFactorFilings: jest.fn() }));
 jest.mock('../db', () => ({ pool: { label: 'primary' }, readDb: { label: 'replica' } }));
 
 import { fetchSubmissions, SecSubmissions, SubmissionsNotFoundError } from '../sec';
-import { ingestFilingText, getFilingTextsByAccn } from '../repositories/filingTextRepository';
-import { hasRiskFactorDiff, upsertRiskFactorDiff } from '../repositories/riskFactorDiffRepository';
+import { ingestFilingText, getFilingTextsByAccn, getLatestFilingTexts } from '../repositories/filingTextRepository';
+import { hasRiskFactorDiff, upsertRiskFactorDiff, deleteRiskFactorDiff } from '../repositories/riskFactorDiffRepository';
 import { diffRiskFactorFilings } from '../riskFactorDiff';
-import { computeLatestRiskFactorDiff } from '../riskFactorDiffService';
+import { computeLatestRiskFactorDiff, recomputeRiskFactorDiffFromStoredTexts } from '../riskFactorDiffService';
 
 const RESULT = { summary: { added: 1, removed: 0, modified: 0, unchanged: 3 }, chunks: [] } as never;
 
@@ -139,5 +141,48 @@ describe('computeLatestRiskFactorDiff', () => {
     jest.mocked(fetchSubmissions).mockRejectedValue(new Error('HTTP 503'));
 
     await expect(computeLatestRiskFactorDiff('320193')).rejects.toThrow('HTTP 503');
+  });
+});
+
+// F1c-2: the extraction fix changes most stored diffs. Both 10-K texts are
+// stored for every compared company, so recomputing needs no SEC request.
+describe('recomputeRiskFactorDiffFromStoredTexts', () => {
+  const STORED_TEXTS = [
+    { accn: 'k-2025', filingDate: '2025-10-31', content: 'text of k-2025' },
+    { accn: 'k-2024', filingDate: '2024-11-01', content: 'text of k-2024' },
+  ];
+
+  test('recomputes from the two latest stored 10-Ks - older first - and stores the result, with no SEC request', async () => {
+    jest.mocked(getLatestFilingTexts).mockResolvedValue(STORED_TEXTS);
+
+    const outcome = await recomputeRiskFactorDiffFromStoredTexts('320193');
+
+    expect(outcome.status).toBe('computed');
+    expect(getLatestFilingTexts).toHaveBeenCalledWith('0000320193', ['10-K'], 2);
+    expect(diffRiskFactorFilings).toHaveBeenCalledWith('text of k-2024', 'text of k-2025');
+    expect(upsertRiskFactorDiff).toHaveBeenCalledWith('0000320193', 'k-2025', '2025-10-31', 'k-2024', '2024-11-01', RESULT);
+    expect(fetchSubmissions).not.toHaveBeenCalled();
+    expect(ingestFilingText).not.toHaveBeenCalled();
+  });
+
+  test('a section that no longer extracts deletes the stored diff - a diff of the wrong text is worse than none', async () => {
+    jest.mocked(getLatestFilingTexts).mockResolvedValue(STORED_TEXTS);
+    jest.mocked(diffRiskFactorFilings).mockResolvedValue(null);
+
+    const outcome = await recomputeRiskFactorDiffFromStoredTexts('320193');
+
+    expect(outcome.status).toBe('not-extractable');
+    expect(deleteRiskFactorDiff).toHaveBeenCalledWith('0000320193', 'k-2025', 'k-2024');
+    expect(upsertRiskFactorDiff).not.toHaveBeenCalled();
+  });
+
+  test('fewer than two stored 10-Ks has not enough history, and deletes nothing', async () => {
+    jest.mocked(getLatestFilingTexts).mockResolvedValue(STORED_TEXTS.slice(0, 1));
+
+    const outcome = await recomputeRiskFactorDiffFromStoredTexts('320193');
+
+    expect(outcome.status).toBe('not-enough-history');
+    expect(diffRiskFactorFilings).not.toHaveBeenCalled();
+    expect(deleteRiskFactorDiff).not.toHaveBeenCalled();
   });
 });
