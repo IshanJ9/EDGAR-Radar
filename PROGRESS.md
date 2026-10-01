@@ -1106,7 +1106,7 @@ This was the one "Done when" item not re-tested since failure case 2 added start
 
 Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups listed after production ingestion was complete (backup, Slack alerts, frontend, redundant SEC downloads, the heartbeat blind spot, a README). Phase 8 (India) is skipped for now by the user's decision.
 
-- [ ] Hardening, step 1 — **Nightly off-box database backup to Oracle Object Storage.** Built and verified 2026-09-30; ticked once the scheduled service has run in production.
+- [x] Hardening, step 1 — **Nightly off-box database backup to Oracle Object Storage.** Built and verified 2026-09-30; **the first scheduled run confirmed 2026-10-01**: the service's log reads `[2026-10-01T03:00:00Z] Backup OK: edgar_radar-01.dump, 935687 bytes`, then `Next backup in 86400s`. (The dump is ~4× the 2026-09-30 one because F1b and F1b-2 more than doubled the stored facts.)
 
   **Where the backups go, and why.** The database is small — **11 MB, a 237 KB compressed dump** — so capacity was never the question; permanence was. The earlier suggestion, Azure Blob Storage, was withdrawn: the Azure for Students subscription stops every resource when its credit expires, within 12 months. The user chose **Oracle Object Storage**. Checked against Oracle's documentation before creating anything: every tenancy gets **20 GB of Always Free Object Storage and 50,000 API requests a month**, permanently (10 GB per tier while the trial or a paid account is active). This job uses about 7 MB and about 30 requests a month. It protects against the VM or its disk being lost or reclaimed; it does not protect against losing the whole Oracle account — the user was told this when choosing.
 
@@ -1125,7 +1125,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
 
   **Then a real production backup — the "Done when" item.** The image was built on the VM from these files and run once against the live database: **`Backup OK: edgar_radar-30.dump, 242,568 bytes`**. The object was then **downloaded independently, with the account owner's own OCI credentials rather than the VM's write-only link**, and restored into a fresh local Postgres: `pg_restore` exited 0, **17/17 tables, every row count identical to production** (e.g. 196 companies, 6,035 facts, 1,353 discovered filings, 185 poll runs; no rows were written to production after the backup, so it is a like-for-like comparison). The trial image and every local test container were removed.
 
-  **Still to do for this step:** after merge, confirm the `backup` service is running and that its first scheduled run, 03:00 UTC, uploads `edgar_radar-01.dump`.
+  **Done 2026-10-01 (see the first line of this entry):** after merge, confirm the `backup` service is running and that its first scheduled run, 03:00 UTC, uploads `edgar_radar-01.dump`.
 
   **Limits, logged:**
   - **Nothing alerts if a nightly backup fails** — it is only logged. The heartbeat step (step 5) or the Slack step could cover it.
@@ -1239,7 +1239,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - **A deploy can orphan a poll cycle.** Run 196 stayed `running` from 19:30 — the F1a cache-fix deploy restarted the poller mid-cycle, and nothing marks such a row finished. Harmless to the heartbeat and `/stats` (both read completed cycles only), but it made the backfill script's "wait for no running cycle" check wait forever; the check now ignores `running` rows older than 10 minutes. A fix (mark stale `running` rows as `failed` when the poller starts) is not made here.
   - **The mockups' Apple scores (1.69 / 6 / −2.57) came from the mislabelled data;** the real fiscal 2025 values are above. The design is unaffected.
 
-- [ ] Hardening, step 3, F1b-2 — **Score coverage: figures under other names, derived figures, and aligned years.** Built and tested locally 2026-09-30; ticked after deploy, the re-ingest and a production check.
+- [x] Hardening, step 3, F1b-2 — **Score coverage: figures under other names, derived figures, and aligned years.** Built and tested locally 2026-09-30; PR #34, deployed with PR #32's merge; **verified in production 2026-10-01** (below).
 
   **How the fixes were chosen — from data, not guesses.** SEC's bulk `companyfacts.zip` was downloaded **once** to the VM through the app's own downloader and SEC client (**1 SEC request**, 1.4 GB in 1 m 44 s), and a script counted, for each figure a score needs, which companies have no recent two-year pair under the current tags and which *other* tags those companies report for full years:
   - **Gross profit:** 140 without; 69 report cost of revenue (`CostOfGoodsAndServicesSold` 44, `CostOfRevenue` 17, `CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization` 8) — so **derive gross profit = revenue − cost of revenue**.
@@ -1258,6 +1258,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
 
   **Next:** deploy; re-ingest all 196 from the bulk file already on the VM (0 SEC requests); measure coverage (before: all three 27, none 44); check the company-list response time, since scoring now reads five years per figure; delete the 1.4 GB file.
 
+<<<<<<< Updated upstream
 - [x] Hardening, out-of-band — **Replace `@xenova/transformers` with `@huggingface/transformers` to clear 5 production audit findings.** Requested by the user 2026-10-01, outside the numbered steps. Done with **fp32 weights** (the user's choice, below); **deployed 2026-09-30 20:35 UTC** (PR #32), with the embedding check passing in the build on the ARM64 VM.
 
   **The findings.** `npm audit --omit=dev`: 1 critical and 4 high, all through `@xenova/transformers@2.17.2` — `protobufjs <=7.6.2` (code execution; via `onnx-proto` in `onnxruntime-web`) and `sharp <=0.35.4-rc.0` (libvips/libheif). npm's only fix was a downgrade to 1.4.2, which was not an option.
@@ -1288,3 +1289,21 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   **Getting it merged took two branch repairs, both from merging `Main` in, neither from this change.** First, a line-by-line merge broke `package-lock.json` (above). Second, after `Main` moved on (PRs #33, #34), the only conflict was the "Current status" paragraph — and it turned out the branch already carried that paragraph **twice**, left behind by the first merge keeping both sides. The resolution kept `Main`'s latest paragraph plus this entry's one sentence; verified on the merged result: lockfile blob unchanged, 227/227 unit tests, 31/31 integration tests, build and lint clean. **Lesson, for any branch that changes dependencies:** never let git merge `package-lock.json` textually — keep one side's and regenerate with `npm install`.
 
   **Logged, not changed:** `npm audit` (dev dependencies included) shows 1 high in `brace-expansion`, reached only through jest/eslint — present in HEAD's lockfile before this change.
+=======
+  **Verified in production (2026-10-01).** The running images contain `storeCompanyFacts` and `dist/scripts/backfillFromBulk.js`.
+  - **Coverage after the deploy alone** (aligned years, no new data yet): all three scores **27 → 21**, none 44 → 52 (Altman 138, Piotroski 41, Beneish 33). Expected: scores that had paired different years now fail honestly.
+  - **Re-ingest from the bulk file:** a one-off container of the poller service with the file mounted read-only (`docker compose run --rm --no-deps -v /home/ubuntu/bulk-analysis:/bulk:ro poller node dist/scripts/backfillFromBulk.js /bulk/companyfacts.zip`), 06:04:21 → 06:04:50 UTC, **29 s; 196/196 in the file, 196 stored, 0 failed; 0 SEC requests.** The poller was left running: the script makes no SEC requests, and every write is an idempotent upsert.
+  - **Data:** facts 14,876 → **16,394**, **0 quarantined**, the replica identical (16,394), 0 mislabelled years. Companies now holding the new figures: cost of revenue under `CostOfGoodsAndServicesSold` 87, `CostOfRevenue` 41, `CostOfGoodsSold` 10, the excluding-D&A tag 8; weighted-average shares 66; G&A 57, selling and marketing 28; receivables 22 + 16; revenue fallbacks 5 + 4 + 1.
+  - **Coverage after the re-ingest: all three scores 56** (27 before F1b-2), two 42, one 61, **none 37** (was 44). Per score: **Piotroski 41 → 104, Beneish 33 → 71**, Altman 138. Apple unchanged (FY2025: 2.31 / 8 / −2.30).
+  - **Derived figures reach the API:** 60 companies' served scores list a `derived` figure — e.g. AbbVie's Piotroski and Beneish use `derived: ["grossProfit"]` (it reports cost of revenue, not gross profit).
+  - **The company list:** cold **2.53 s** (it was 1.5–2.2 s with two years per figure), warm 2 ms; 196 companies, 58.7 KB. Acceptable behind the 5-minute cache; logged below.
+  - **The 1.4 GB bulk file deleted** from the VM (disk 28% used).
+
+  **Why Altman is 138, not the 146 before F1b-2 — checked company by company (58 unscored):**
+  - **49 are honest and expected:** 19 report no `OperatingIncomeLoss` in recent years (e.g. ADM, IBM, LLY, MRK — EBIT was deliberately not changed), 29 are banks, insurers, REITs or homebuilders without current assets/liabilities (by design), plus SYY (no recent retained earnings).
+  - **5 lost a score that was wrong:** ETN, GE, JNJ, KLAC and TJX report EBIT only up to 2010–2019, so before F1b-2 their Altman paired, for example, GE's 2012 operating income with its 2025 balance sheet — exactly the bug fixed here.
+  - **3 lost a score to a gap in F1b-2 itself (logged, not fixed):** DHR, T and TMUS stopped reporting total `Liabilities` years ago (their latest are 2010, 2015, 2012). A derivation runs only when a company has **no** reported figure at all, so the stale series blocks liabilities = assets − equity, which would fill every recent year. The same rule applies to gross profit and SG&A. The fix — derive for any year the reported figure lacks — is a small change to `deriveIfMissing`; not made without the user's decision.
+  - **XOM is a universe issue:** CIK 0002115436 is *ExxonMobil Holdings Corp*, a new holding company with a single 10-Q (2026-06-30) and no annual history yet; ExxonMobil's long history is under CIK 0000034088. Its scores will appear once the holding company files a 10-K — or the universe can point at the old CIK meanwhile. Not changed.
+
+  **Found in passing, logged:** the company list's cold build grows with history (2.5 s). If the frontend shows it, the fix is to serve stored score results rather than recompute 196 × 3 scores — a later decision.
+>>>>>>> Stashed changes
