@@ -1306,7 +1306,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
 
   **Logged, not changed:** `npm audit` (dev dependencies included) shows 1 high in `brace-expansion`, reached only through jest/eslint — present in HEAD's lockfile before this change.
 
-- [ ] Hardening, step 3, F1b-3 — **A stale reported figure no longer blocks its derivation.** The user chose to fix F1b-2's logged gap before F1c (2026-10-01). Built and tested locally; ticked after deploy and a production check.
+- [x] Hardening, step 3, F1b-3 — **A stale reported figure no longer blocks its derivation.** The user chose to fix F1b-2's logged gap before F1c (2026-10-01). PR #37; CI (including the integration suite) and the deploy passed; **verified in production 2026-10-01** (end of this entry).
 
   **The rule, in `deriveIfMissing` (src/scoring.ts).** Before, a figure was derived from its parts only when the company had **never** reported it, so Danaher's 2010 `Liabilities` blocked liabilities = assets − equity for 2011–2025. Now:
   - The derived series is used when it reaches a **newer year** than the reported one. On a tie the reported figure wins, as before.
@@ -1321,3 +1321,10 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
     The two new tests above catch both.
 
   **Next:** deploy (no re-ingest; the stored data is unchanged), then measure coverage (now: all three 56, none 37, Altman 138) and confirm DHR, T and TMUS get Altman scores. Then check the company list's cold time against 2.53 s.
+
+  **Verified in production (2026-10-01).** CI run for merge commit `5359b3a` completed with success (lint, unit, build, **integration** and deploy); the running API and scoring worker contain the new rule; all services up. No re-ingest — the stored data is unchanged (16,394 facts, 0 mislabelled years).
+  - **Coverage: all three scores 56 → 63**, two 42 → 44, one 61 → 56, **none 37 → 33**. Per score: Altman 138 → **141**, Piotroski 104 → **114**, Beneish 71 → **78** — the last two from companies whose reported gross profit or SG&A had gone stale.
+  - **The three companies:** DHR Altman **4.46 safe**, T **0.88 distress**, TMUS **1.26 grey zone**, all fiscal 2025 with `liabilitiesDerived: true`. Checked by hand for Danaher: assets $83.464B − equity $52.534B = **$30.930B**, the liabilities served by `GET /companies/0000313616/scores`.
+  - **Unchanged where it should be:** Apple 2.31 / 8 / −2.30 with reported liabilities (`liabilitiesDerived: false`); AbbVie's derived liabilities as before.
+  - Scores using a derived figure: **Piotroski 61, Beneish 48**.
+  - **The company list:** cold **2.48 s** (2.53 s before), warm 3 ms — the gate on reading the parts kept the extra queries away.
