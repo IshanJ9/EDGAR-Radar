@@ -1583,7 +1583,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - **Logged, not changed:** a company with no stored risk comparison gets the API's expected 404, which browsers log in the developer console as "Failed to load resource: 404". Visitors never see it, and the page handles it as designed.
   - **Still open from the mockup, not built:** the "latest quarter" box, "last checked N minutes ago", and a header search on company pages.
 
-- [ ] Hardening, step 3, F4 + F5 — **The rest of the website: "How it works", "All companies", "Latest filings", navigation, and polish.** Built 2026-10-02 in one push **at the user's explicit request** ("complete the entire frontend for next push"), a deliberate exception to the one-step-at-a-time rule. Verified locally against the production API; ticked after deploy and a live check. F5's real test with a non-technical person is the user's part and is still open.
+- [x] Hardening, step 3, F4 + F5 — **The rest of the website: "How it works", "All companies", "Latest filings", navigation, and polish.** **Live and verified 2026-10-02** (end of this entry); F5's real test with a non-technical person is still open (the user's part). Built 2026-10-02 in one push **at the user's explicit request** ("complete the entire frontend for next push"), a deliberate exception to the one-step-at-a-time rule. Verified locally against the production API; ticked after deploy and a live check. F5's real test with a non-technical person is the user's part and is still open.
 
   **What was built** (all from the approved mockups):
   - **Navigation:**
@@ -1643,4 +1643,16 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   **Size:** the main bundle is 96.5 KB gzipped (87.5 KB before, now with three more pages); the company page's chunk is 112.8 KB. The backend is unchanged (270/270, `tsc` and ESLint clean).
 
   **Next:** deploy, then check every page on https://edgar-radar.vercel.app, including a link preview of the site URL. F5's last item is the user's: watch a non-technical person use the site unaided and note what confuses them, then fix it.
+
+  **Verified on the live site (2026-10-02).** Vercel serves `index-C8efIhxL.js`, the same file as the local build.
+  - **Every route answers 200:** `/`, `/companies`, `/filings`, `/how-it-works` and `/company/AAPL`. `/og-image.png` is served as `image/png` (66 KB) and `robots.txt` as text. The Open Graph and `twitter:card` tags are in the served HTML, where crawlers read them.
+  - **Accessibility on the live pages:** axe ran (WCAG 2.1 A/AA) on 8 pages: home, all companies, filings, how it works, Apple, JPMorgan, ExxonMobil and not found. **0 violations at 375 px and at 1280 px**, colour contrast included.
+  - **Horizontal scrolling: 0 px** on every page at 375, 600, 800 and 1280 px.
+  - **A false alarm, recorded so it isn't mistaken for a bug later:** the first run reported 184-278 px of overflow and two contrast failures on Apple's page. The browser pane was collapsed at that moment, with a **0 px-wide viewport**, so every element "overflowed" and text overlapped. At real sizes both disappear.
+  - **Live content:**
+    - **All companies:** "63 of 196 have all three scores and 33 have none"; 25 a page.
+    - **Latest filings:** "403 routine offers of notes and bonds" folded; 480 filings in 24 hours; "Kinder Morgan … Filed its conflict-minerals report".
+    - **How it works:** the last check 28 min before, 16,394 figures, and "5 figures corrected in last night's cross-check of 196 companies".
+    - **Apple:** "filings last checked 28 min ago".
+  - **Still open:** F5's real test - a non-technical person using the site unaided, with what confuses them fixed afterwards.
 
