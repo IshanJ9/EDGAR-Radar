@@ -8,7 +8,9 @@ It runs unattended in production, around the clock, at **$0/month**.
 
 > **New to this?** Read the [plain-English explanation](docs/edgar-radar-explained.md). No technical background needed.
 
-**Live API:** [`http://80.225.253.10:3000/companies/0000320193/facts`](http://80.225.253.10:3000/companies/0000320193/facts) (Apple's financial facts). There is no web frontend yet; see [Status](#status).
+**Live site:** [edgar-radar.vercel.app](https://edgar-radar.vercel.app) - search any of the 196 companies. The company pages are being built; see [Status](#status).
+
+**Live API:** [`http://80.225.253.10:3000/companies/0000320193/facts`](http://80.225.253.10:3000/companies/0000320193/facts) (Apple's financial facts).
 
 ---
 
