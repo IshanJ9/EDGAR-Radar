@@ -30,6 +30,12 @@ jest.mock('../repositories/statsRepository', () => ({
   getPipelineStats: jest.fn(),
   getRecentFilings: jest.fn(),
 }));
+jest.mock('../repositories/riskFactorDiffRepository', () => ({
+  getLatestRiskFactorDiff: jest.fn(),
+  hasRiskFactorDiff: jest.fn(),
+  upsertRiskFactorDiff: jest.fn(),
+}));
+jest.mock('../riskFactorDiff', () => ({ diffRiskFactorFilings: jest.fn() }));
 jest.mock('../sec', () => ({
   ...jest.requireActual('../sec'),
   fetchCompanyFacts: jest.fn(),
@@ -42,6 +48,8 @@ import * as scoring from '../scoring';
 import * as companyRepository from '../repositories/companyRepository';
 import * as statsRepository from '../repositories/statsRepository';
 import * as sec from '../sec';
+import * as riskFactorDiffRepository from '../repositories/riskFactorDiffRepository';
+import { diffRiskFactorFilings } from '../riskFactorDiff';
 
 const APPLE_ALTMAN = {
   status: 'ok',
@@ -93,6 +101,32 @@ describe('GET /companies', () => {
     });
     expect(res.body.companies[1].ratings.altmanZ).toEqual({ status: 'insufficient-history' });
     expect(res.body.companies[1].industry).toBeNull(); // not seen by the poller yet
+    expectNoSecRequests();
+  });
+});
+
+// Post-Phase 7 hardening, step 3 (F1c): diffs are computed when a 10-K
+// arrives, so this endpoint only reads. Before, a click on a company with no
+// stored diff downloaded two 10-Ks from SEC and embedded both - 10-15 s of
+// CPU and 3 SEC requests, from any visitor.
+describe('GET /companies/:cik/risk-factor-diff', () => {
+  test('returns the stored diff', async () => {
+    const stored = { cik: '0000320193', currentAccn: 'a-2', priorAccn: 'a-1', summary: {}, chunks: [] };
+    jest.mocked(riskFactorDiffRepository.getLatestRiskFactorDiff).mockResolvedValue(stored as never);
+
+    const res = await request(app).get('/companies/320193/risk-factor-diff').expect(200);
+
+    expect(res.body).toEqual(stored);
+  });
+
+  test('no stored diff is a 404 - never an SEC download or an embedding', async () => {
+    jest.mocked(riskFactorDiffRepository.getLatestRiskFactorDiff).mockResolvedValue(null);
+
+    const res = await request(app).get('/companies/320193/risk-factor-diff').expect(404);
+
+    expect(res.body.error).toMatch(/no risk-factor comparison/i);
+    expect(diffRiskFactorFilings).not.toHaveBeenCalled();
+    expect(riskFactorDiffRepository.upsertRiskFactorDiff).not.toHaveBeenCalled();
     expectNoSecRequests();
   });
 });

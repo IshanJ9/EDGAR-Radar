@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { CompanyFactsNotFoundError, padCik } from '../sec';
 import { pool, Queryable, readDb } from '../db';
 import { CompanyRecord, getCompanyByCik, getFactsByCik, getIndustries, upsertCompanyFacts } from '../repositories/companyRepository';
-import { getOrComputeRiskFactorDiff } from '../riskFactorDiffService';
+import { getStoredRiskFactorDiff } from '../riskFactorDiffService';
 import { cacheKeys } from '../cache';
 import { sendAndCache, sendIfCached } from './cachedResponse';
 import { computeCompanyScores, summarizeScore } from '../companyScores';
@@ -162,9 +162,9 @@ router.get('/:cik/risk-factor-diff', async (req, res) => {
   if (await sendIfCached(res, key)) return;
 
   try {
-    const diff = await getOrComputeRiskFactorDiff(cik);
+    const diff = await getStoredRiskFactorDiff(cik);
     if (!diff) {
-      res.status(404).json({ error: 'Not enough 10-K history yet to compute a risk-factor diff for this company.' });
+      res.status(404).json({ error: 'No risk-factor comparison stored for this company yet. One is computed when it files a new 10-K.' });
       return;
     }
     sendAndCache(res, key, diff);

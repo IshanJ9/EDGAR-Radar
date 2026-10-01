@@ -1,5 +1,5 @@
 import { pool } from '../db';
-import { padCik, fetchSubmissions, findMostRecentFiling, findRecentFilings, FilingReference } from '../sec';
+import { padCik, fetchSubmissions, findMostRecentFiling, FilingReference } from '../sec';
 import { fetchFilingDocumentHtml, extractPlainText } from '../filingText';
 
 export class NoFilingFoundError extends Error {}
@@ -65,55 +65,25 @@ export async function ingestMostRecentFilingText(
   return ingestFilingText(paddedCik, filing);
 }
 
-/**
- * Fetches and ingests a company's `count` most recent filings of one of
- * `formTypes` - used for risk-factor-section diffing (Phase 5), which needs
- * a company's two most recent 10-Ks, not just the latest one the poller
- * already keeps fresh. Always re-fetches and re-extracts each filing (the
- * underlying `filing_text_sections` upsert is idempotent, so this is safe
- * to call repeatedly) - it does not skip filings already stored. Found
- * during Phase 5's closing failure-case testing that an earlier version of
- * this comment incorrectly claimed it did skip them; corrected here rather
- * than left misleading. A practical effect of always re-fetching: any
- * previously-corrupted or stale stored text for these two filings
- * self-heals on the next call, since it gets overwritten with a fresh copy
- * from SEC before being read back.
- */
-export async function ingestRecentFilingsText(
-  cik: string,
-  formTypes: string[] = ['10-K'],
-  count = 2,
-): Promise<Array<{ cik: string; accn: string; form: string; filingDate: string; contentLength: number }>> {
-  const paddedCik = padCik(cik);
-  const submissions = await fetchSubmissions(paddedCik);
-  const filings = findRecentFilings(submissions, formTypes, count);
-  if (filings.length === 0) {
-    throw new NoFilingFoundError(`No filing of type [${formTypes.join(', ')}] found for CIK ${paddedCik}.`);
-  }
-
-  const results = [];
-  for (const filing of filings) {
-    results.push(await ingestFilingText(paddedCik, filing));
-  }
-  return results;
-}
-
 export interface StoredFilingText {
   accn: string;
   filingDate: string;
   content: string;
 }
 
-/** Reads back up to `count` most recently stored filings of a form type (newest first), full text included. */
-export async function getRecentFilingTexts(cik: string, formTypes: string[] = ['10-K'], count = 2): Promise<StoredFilingText[]> {
+/**
+ * The stored full text of each of these filings that is stored, keyed by
+ * accession number - a filing not stored yet is simply absent. Used by the
+ * risk-factor diff (F1c) both to see which 10-Ks it must still download and
+ * to read the pair it compares.
+ */
+export async function getFilingTextsByAccn(cik: string, accns: string[]): Promise<Map<string, StoredFilingText>> {
   const result = await pool.query(
     `SELECT accn, filing_date, content FROM filing_text_sections
-     WHERE cik = $1 AND form = ANY($2) AND section_name = 'full_document'
-     ORDER BY filing_date DESC
-     LIMIT $3`,
-    [padCik(cik), formTypes, count],
+     WHERE cik = $1 AND accn = ANY($2) AND section_name = 'full_document'`,
+    [padCik(cik), accns],
   );
-  return result.rows.map((row) => ({ accn: row.accn, filingDate: row.filing_date, content: row.content }));
+  return new Map(result.rows.map((row) => [row.accn, { accn: row.accn, filingDate: row.filing_date, content: row.content }]));
 }
 
 export interface FilingTextSearchResult {

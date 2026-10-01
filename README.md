@@ -110,7 +110,7 @@ Base URL: `http://80.225.253.10:3000`. CIKs are SEC company IDs, e.g. `000032019
 | `GET` | `/companies/:cik` | Company name. Fetched from SEC on first request, then stored. |
 | `GET` | `/companies/:cik/scores` | Altman Z″, Piotroski F and Beneish M with their inputs; "insufficient history" when a score can't be computed fairly. Stored companies only. |
 | `GET` | `/companies/:cik/facts` | Normalized financial facts. Served from cache (`X-Cache: HIT/MISS`). |
-| `GET` | `/companies/:cik/risk-factor-diff` | New and removed risk factors between the last two 10-Ks. |
+| `GET` | `/companies/:cik/risk-factor-diff` | New and removed risk factors between the last two 10-Ks. Computed when a 10-K arrives; this only reads (404 until one is stored). |
 | `GET` | `/filings/recent` | Filings discovered in the last `hours` (default 24, max 168), newest first, with plain categories. `exclude=offering` folds away routine bond paperwork. |
 | `GET` | `/stats` | Live pipeline numbers: companies monitored, last poll, last nightly reconciliation, filings in the last 24 hours. |
 | `POST` | `/auth/register` | `{ "email", "password" }` (password ≥ 8 characters) |
@@ -142,8 +142,8 @@ The image build downloads the embedding model once, from Hugging Face.
 
 ```bash
 npm install
-npm test                  # 233 unit tests; no network, SEC is mocked with nock
-npm run test:integration  # 31 tests against a throwaway Postgres in Docker
+npm test                  # 248 unit tests; no network, SEC is mocked with nock
+npm run test:integration  # 33 tests against a throwaway Postgres in Docker
 npm run lint
 ```
 

@@ -6,7 +6,7 @@
  * src/routes/companies.ts and src/riskFactorDiffService.ts:
  * - a replica hit is served from the replica, with no primary query;
  * - a replica miss is checked on the primary before anything expensive
- *   happens (an SEC fetch, or re-embedding two 10-Ks);
+ *   happens (an SEC fetch), or before answering "no diff stored";
  * - once a request has touched the primary, its follow-up reads stay there.
  *
  * `pool` and `readDb` are replaced by two labelled stand-ins, and each
@@ -28,19 +28,13 @@ jest.mock('../repositories/riskFactorDiffRepository', () => ({
   getLatestRiskFactorDiff: jest.fn(),
   upsertRiskFactorDiff: jest.fn(),
 }));
-jest.mock('../repositories/filingTextRepository', () => ({
-  ingestRecentFilingsText: jest.fn(),
-  getRecentFilingTexts: jest.fn(),
-  NoFilingFoundError: class NoFilingFoundError extends Error {},
-}));
 jest.mock('../riskFactorDiff', () => ({ diffRiskFactorFilings: jest.fn() }));
 
 import { pool, readDb } from '../db';
 import { getCompanyByCik, upsertCompanyFacts } from '../repositories/companyRepository';
 import { getLatestRiskFactorDiff } from '../repositories/riskFactorDiffRepository';
-import { ingestRecentFilingsText } from '../repositories/filingTextRepository';
 import { getOrFetchCompany } from '../routes/companies';
-import { getOrComputeRiskFactorDiff } from '../riskFactorDiffService';
+import { getStoredRiskFactorDiff } from '../riskFactorDiffService';
 
 const APPLE: CompanyRecord = { cik: '0000320193', entityName: 'Apple Inc.' };
 
@@ -103,22 +97,27 @@ describe('getOrFetchCompany', () => {
   });
 });
 
-describe('getOrComputeRiskFactorDiff', () => {
+describe('getStoredRiskFactorDiff', () => {
   const STORED = { cik: '0000320193', currentAccn: 'a-2', priorAccn: 'a-1' };
 
   test('a diff the replica holds is served by the replica alone', async () => {
     holdsOn(getLatestRiskFactorDiff, { replica: STORED, primary: STORED });
 
-    await expect(getOrComputeRiskFactorDiff('320193')).resolves.toBe(STORED);
+    await expect(getStoredRiskFactorDiff('320193')).resolves.toBe(STORED);
     expect(routedTo(getLatestRiskFactorDiff)).toEqual(['replica']);
   });
 
-  test('replication lag: a diff on the primary but not yet on the replica is returned, not recomputed', async () => {
+  test('replication lag: a diff on the primary but not yet on the replica is still served', async () => {
     holdsOn(getLatestRiskFactorDiff, { replica: null, primary: STORED });
 
-    await expect(getOrComputeRiskFactorDiff('320193')).resolves.toBe(STORED);
+    await expect(getStoredRiskFactorDiff('320193')).resolves.toBe(STORED);
     expect(routedTo(getLatestRiskFactorDiff)).toEqual(['replica', 'primary']);
-    // The expensive path - fetching filing text and embedding it - never starts.
-    expect(ingestRecentFilingsText).not.toHaveBeenCalled();
+  });
+
+  test('no diff on either database is null - nothing is computed on a request', async () => {
+    holdsOn(getLatestRiskFactorDiff, { replica: null, primary: null });
+
+    await expect(getStoredRiskFactorDiff('320193')).resolves.toBeNull();
+    expect(routedTo(getLatestRiskFactorDiff)).toEqual(['replica', 'primary']);
   });
 });

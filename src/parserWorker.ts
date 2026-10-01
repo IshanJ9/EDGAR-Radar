@@ -2,6 +2,7 @@ import { Job } from 'bullmq';
 import { attemptCompanyIngestion } from './companyIngestion';
 import { ingestFilingText } from './repositories/filingTextRepository';
 import { claimStage } from './repositories/stageCompletionRepository';
+import { computeLatestRiskFactorDiff } from './riskFactorDiffService';
 import { filingParsedQueue, FilingDiscoveredJobData } from './queues';
 import { createLogger } from './logger';
 
@@ -55,6 +56,20 @@ export async function processFilingDiscovered(job: Job<FilingDiscoveredJobData>)
       textIngested = true;
     } catch (err) {
       logger.error({ ticker, cik, accessionNumber, err }, 'Failed to ingest filing text');
+    }
+  }
+
+  // A new 10-K is the only time a company's risk-factor diff can change, so
+  // it is computed here rather than on an API request (post-Phase 7
+  // hardening, step 3, F1c). Logged, not thrown, like a failed text ingest:
+  // the filing's facts and scores matter more than the diff, and the next
+  // 10-K - or a backfill re-run - computes it.
+  if (textIngested) {
+    try {
+      const outcome = await computeLatestRiskFactorDiff(cik);
+      logger.info({ ticker, cik, accessionNumber, outcome }, 'Risk-factor diff');
+    } catch (err) {
+      logger.error({ ticker, cik, accessionNumber, err }, 'Failed to compute risk-factor diff');
     }
   }
 

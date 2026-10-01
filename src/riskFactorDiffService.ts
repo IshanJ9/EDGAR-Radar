@@ -1,53 +1,77 @@
 import { pool, readDb } from './db';
-import { padCik, SubmissionsNotFoundError } from './sec';
+import { padCik, fetchSubmissions, findRecentFilings, SubmissionsNotFoundError } from './sec';
 import { diffRiskFactorFilings } from './riskFactorDiff';
-import { ingestRecentFilingsText, getRecentFilingTexts, NoFilingFoundError } from './repositories/filingTextRepository';
-import { getLatestRiskFactorDiff, upsertRiskFactorDiff, StoredRiskFactorDiff } from './repositories/riskFactorDiffRepository';
+import { ingestFilingText, getFilingTextsByAccn } from './repositories/filingTextRepository';
+import {
+  getLatestRiskFactorDiff,
+  hasRiskFactorDiff,
+  upsertRiskFactorDiff,
+  StoredRiskFactorDiff,
+} from './repositories/riskFactorDiffRepository';
 
 /**
- * Get-or-compute, same pattern as `getOrFetchCompany` in the companies
- * route: serves a cached diff if one exists, otherwise ingests whatever
- * 10-K text is missing, computes the diff (the expensive part - embedding
- * every chunk locally), stores it, and returns it. Returns `null` if the
- * company doesn't have 2 fiscal years of 10-K history yet, or if the Risk
- * Factors section couldn't be extracted from one/both filings - the same
- * honest "not enough history" shape used by the ratio scores in step 3,
- * rather than a crash or a misleading empty result.
+ * The stored diff for a company, or null - all the API does (post-Phase 7
+ * hardening, step 3, F1c). Diffs are computed when a 10-K arrives, by
+ * `computeLatestRiskFactorDiff` below; before F1c a request for a company
+ * with no stored diff downloaded two 10-Ks and embedded both, so any
+ * visitor's click could spend SEC requests and 10-15 s of CPU.
+ *
+ * Replica first (Phase 7, step 2); a replica miss may only be replication
+ * lag, so the primary is checked before answering "none".
  */
-export async function getOrComputeRiskFactorDiff(cik: string): Promise<StoredRiskFactorDiff | null> {
+export async function getStoredRiskFactorDiff(cik: string): Promise<StoredRiskFactorDiff | null> {
+  const paddedCik = padCik(cik);
+  return (await getLatestRiskFactorDiff(paddedCik, readDb)) ?? (await getLatestRiskFactorDiff(paddedCik, pool));
+}
+
+export type RiskFactorDiffOutcome =
+  | { status: 'computed'; currentAccn: string; priorAccn: string }
+  | { status: 'already-stored'; currentAccn: string; priorAccn: string }
+  | { status: 'not-enough-history'; reason: string }
+  | { status: 'not-extractable'; currentAccn: string; priorAccn: string };
+
+/**
+ * Compares a company's two most recent 10-Ks and stores the result (F1c).
+ * Called by the parser worker after it stores a new 10-K's text, and by the
+ * one-off scripts/backfillRiskFactorDiffs.ts.
+ *
+ * SEC cost: one submissions request to find the two 10-Ks, plus a download
+ * of each one whose text is not stored yet - none, if this pair was already
+ * compared (then nothing else happens either, so a re-run is cheap and a
+ * backfill resumes where it stopped). Embedding is the expensive part, about
+ * 10-15 s on the production VM.
+ *
+ * Fewer than two 10-Ks, or a CIK SEC does not know, is `not-enough-history`;
+ * a Risk Factors section that cannot be found in one of the filings is
+ * `not-extractable`, and nothing is stored. Any other failure propagates.
+ */
+export async function computeLatestRiskFactorDiff(cik: string): Promise<RiskFactorDiffOutcome> {
   const paddedCik = padCik(cik);
 
-  // Replica first (Phase 7, step 2). A replica miss may only be replication
-  // lag, and recomputing is the most expensive thing the API does - it embeds
-  // every chunk of two 10-Ks - so the primary is checked before recomputing,
-  // for the same reason getOrFetchCompany does before re-fetching from SEC.
-  const cached = (await getLatestRiskFactorDiff(paddedCik, readDb)) ?? (await getLatestRiskFactorDiff(paddedCik, pool));
-  if (cached) return cached;
-
+  let submissions;
   try {
-    await ingestRecentFilingsText(paddedCik, ['10-K'], 2);
+    submissions = await fetchSubmissions(paddedCik);
   } catch (err) {
-    if (err instanceof NoFilingFoundError || err instanceof SubmissionsNotFoundError) return null;
+    if (err instanceof SubmissionsNotFoundError) return { status: 'not-enough-history', reason: 'SEC has no filings for this CIK.' };
     throw err;
   }
 
-  const texts = await getRecentFilingTexts(paddedCik, ['10-K'], 2);
-  if (texts.length < 2) return null;
+  const filings = findRecentFilings(submissions, ['10-K'], 2); // newest first, as SEC lists them
+  if (filings.length < 2) return { status: 'not-enough-history', reason: `${filings.length} 10-K on file; a comparison needs 2.` };
+  const [newer, older] = filings as [(typeof filings)[0], (typeof filings)[0]];
+  const pair = { currentAccn: newer.accessionNumber, priorAccn: older.accessionNumber };
 
-  const [newer, older] = texts; // getRecentFilingTexts orders newest first
-  const result = await diffRiskFactorFilings(older!.content, newer!.content);
-  if (!result) return null;
+  if (await hasRiskFactorDiff(paddedCik, pair.currentAccn, pair.priorAccn)) return { status: 'already-stored', ...pair };
 
-  await upsertRiskFactorDiff(paddedCik, newer!.accn, newer!.filingDate, older!.accn, older!.filingDate, result);
+  const alreadyStored = await getFilingTextsByAccn(paddedCik, [pair.currentAccn, pair.priorAccn]);
+  for (const filing of filings) {
+    if (!alreadyStored.has(filing.accessionNumber)) await ingestFilingText(paddedCik, filing);
+  }
 
-  return {
-    cik: paddedCik,
-    currentAccn: newer!.accn,
-    currentFilingDate: newer!.filingDate,
-    priorAccn: older!.accn,
-    priorFilingDate: older!.filingDate,
-    summary: result.summary,
-    chunks: result.chunks,
-    computedAt: new Date().toISOString(),
-  };
+  const texts = await getFilingTextsByAccn(paddedCik, [pair.currentAccn, pair.priorAccn]);
+  const result = await diffRiskFactorFilings(texts.get(pair.priorAccn)!.content, texts.get(pair.currentAccn)!.content);
+  if (!result) return { status: 'not-extractable', ...pair };
+
+  await upsertRiskFactorDiff(paddedCik, pair.currentAccn, newer.filingDate, pair.priorAccn, older.filingDate, result);
+  return { status: 'computed', ...pair };
 }

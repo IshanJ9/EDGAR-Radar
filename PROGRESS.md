@@ -1328,3 +1328,27 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - **Unchanged where it should be:** Apple 2.31 / 8 / −2.30 with reported liabilities (`liabilitiesDerived: false`); AbbVie's derived liabilities as before.
   - Scores using a derived figure: **Piotroski 61, Beneish 48**.
   - **The company list:** cold **2.48 s** (2.53 s before), warm 3 ms — the gate on reading the parts kept the extra queries away.
+
+- [ ] Hardening, step 3, F1c — **Risk-factor diffs computed when a 10-K arrives; the API only reads them.** Built and tested locally 2026-10-01; ticked after deploy, the backfill and a production check.
+
+  **Why.** `GET /companies/:cik/risk-factor-diff` computed a missing diff on the request itself: 3 SEC requests (the company's filing list and two 10-Ks) and, measured on the production VM, **10–15 s of CPU and ~300 MB** to embed Apple's two 10-Ks (207 KB and 205 KB of text, 142 chunks). On a public site any visitor's click could start that. And a stored diff was never refreshed, so it went stale at the next 10-K.
+
+  **Production before F1c:** **1** stored diff (Apple, FY2025 against FY2024), 10-K text for 2 companies, and **0** 10-Ks discovered since the poller went live (most companies file in February). Once the endpoint only reads, the site would show almost no diffs for ~4 months, so the user approved a **one-off backfill** of all 196 companies (about 590 SEC requests, ~45 min on the VM).
+
+  **What changed:**
+  - **`computeLatestRiskFactorDiff(cik)`** (src/riskFactorDiffService.ts). It finds the company's two latest 10-Ks from its SEC filing list. If that exact pair is already compared it stops: no download, no embedding. Otherwise it downloads **only the 10-Ks whose text is not stored**, compares them (older against newer) and stores the result. The old path always re-downloaded both. Outcomes: `computed`, `already-stored`, `not-enough-history` (fewer than two 10-Ks, or a CIK SEC does not know), `not-extractable` (no Risk Factors section found; nothing stored). Any other failure propagates.
+  - **The parser worker** calls it after storing a 10-K's text, so the cost is 1 SEC request (the filing list) plus last year's 10-K if it is not stored yet. The parser worker already has a 2/s share of the SEC budget, so no new budget was needed. A failure is logged, not thrown, like a failed text download: the filing still goes on to scoring. Same image as the API, so the embedding model is already baked in.
+  - **The endpoint only reads** (`getStoredRiskFactorDiff`: replica, then primary). With no stored diff it returns 404 "No risk-factor comparison stored for this company yet. One is computed when it files a new 10-K."
+  - **New repository reads:** `hasRiskFactorDiff(cik, currentAccn, priorAccn)` and `getFilingTextsByAccn(cik, accns)`.
+  - **Removed, orphaned by the change:** `getOrComputeRiskFactorDiff`, `ingestRecentFilingsText` and `getRecentFilingTexts`. (`ingestMostRecentFilingText` was already unused before F1c; left alone.)
+  - **`scripts/backfillRiskFactorDiffs.ts`** (new). Runs every universe company through `computeLatestRiskFactorDiff`, printing each outcome and its time, then a count per outcome. Exits 1 if any company failed. A re-run costs one request per company already done, so an interrupted run resumes.
+  - `docker-compose.yml`: the API's SEC-budget comment no longer says it downloads filing text. `README.md`: the endpoint row and test counts.
+
+  **Tests:**
+  - **Unit:** `riskFactorDiffService.test.ts` (8 tests: the pair compared and its order; downloads only missing texts; none when both stored; nothing at all when the pair is already compared; fewer than two 10-Ks; an unknown CIK; a section that cannot be extracted; other SEC failures propagate). `parserWorker.test.ts` (4: a stored 10-K triggers the diff after its text is stored; other forms do not; a failed text download does not; a failed diff does not fail the filing). Route tests in `publicApi.test.ts` (2: a stored diff is served; none is a 404 with no SEC request and no embedding). `readRouting.test.ts` retargeted to the stored-only read, plus a test that "none on either database" is null.
+  - **Integration:** `riskFactorDiffRepository.integration.test.ts` (2: `hasRiskFactorDiff` matches only the exact pair and company; `getFilingTextsByAccn` returns only the full-document text of the asked-for filings).
+  - **Red first:** the unit tests failed before the change (the 404 route test with the old code trying to reach SEC; the parser worker's "computes the diff" test; the service tests with the functions missing). The integration tests were written after the repository functions; the mutation checks below show they can fail.
+  - **Totals:** **248/248 unit tests** (also with one worker), **33/33 integration**; `tsc`, ESLint and the build clean.
+  - **Mutation checks: 9 of 9 caught.** The already-compared check removed; stored texts re-downloaded; older and newer swapped; an unknown CIK thrown; no primary fallback; a diff run without new text; a diff failure failing the job; the SQL ignoring the prior 10-K; the SQL reading any section rather than the full text.
+
+  **Next:** deploy. Then the backfill: stop the poller and run the script as a one-off container of the poller service (its 2/s SEC share), as F1b's backfill did. Then check the counts, a few diffs against their 10-Ks, that the endpoint serves them with no SEC request, and that the poller is running again.
