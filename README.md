@@ -142,7 +142,7 @@ The image build downloads the embedding model once, from Hugging Face.
 
 ```bash
 npm install
-npm test                  # 227 unit tests; no network, SEC is mocked with nock
+npm test                  # 233 unit tests; no network, SEC is mocked with nock
 npm run test:integration  # 31 tests against a throwaway Postgres in Docker
 npm run lint
 ```
@@ -177,7 +177,7 @@ docker/             Postgres replica setup, backup job
 |---|---|
 | ✅ Done | Phases 0–7 of the [roadmap](ROADMAP.md): ingestion, normalization, the poller, queue and workers, scoring and risk-factor diffs, CI/CD and deployment, and scaling (replica, cache, load test). Also production ingestion (the poller, reconciliation and heartbeat live) and nightly off-box backups. |
 | 🚧 Next | A web frontend for non-technical users (search, plain-English scores, charts) with HTTPS and a domain; deeper history, so more companies can be scored. |
-| ⚠️ Known limits | Served over plain HTTP on a bare IP. 56 of 196 companies get all three scores and 37 get none: the scores don't fit banks and insurers (no current assets or liabilities), some companies report no operating income, and a score is shown only when every figure exists for the same year. Every issue found is logged in [PROGRESS.md](PROGRESS.md), including the fixed ones. |
+| ⚠️ Known limits | Served over plain HTTP on a bare IP. 63 of 196 companies get all three scores and 33 get none: the scores don't fit banks and insurers (no current assets or liabilities), some companies report no operating income, and a score is shown only when every figure exists for the same year. Every issue found is logged in [PROGRESS.md](PROGRESS.md), including the fixed ones. |
 
 ---
 
