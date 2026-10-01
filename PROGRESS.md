@@ -1329,7 +1329,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - Scores using a derived figure: **Piotroski 61, Beneish 48**.
   - **The company list:** cold **2.48 s** (2.53 s before), warm 3 ms — the gate on reading the parts kept the extra queries away.
 
-- [ ] Hardening, step 3, F1c — **Risk-factor diffs computed when a 10-K arrives; the API only reads them.** Built and tested locally 2026-10-01; ticked after deploy, the backfill and a production check.
+- [x] Hardening, step 3, F1c — **Risk-factor diffs computed when a 10-K arrives; the API only reads them.** Built and tested locally 2026-10-01; PR #39 deployed; backfilled and checked in production the same day (end of this entry). **The diffs' quality is not good enough to show yet** — 62 of 181 compare far more than the Risk Factors section (below); fixing that is a separate decision.
 
   **Why.** `GET /companies/:cik/risk-factor-diff` computed a missing diff on the request itself: 3 SEC requests (the company's filing list and two 10-Ks) and, measured on the production VM, **10–15 s of CPU and ~300 MB** to embed Apple's two 10-Ks (207 KB and 205 KB of text, 142 chunks). On a public site any visitor's click could start that. And a stored diff was never refreshed, so it went stale at the next 10-K.
 
@@ -1352,3 +1352,33 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   - **Mutation checks: 9 of 9 caught.** The already-compared check removed; stored texts re-downloaded; older and newer swapped; an unknown CIK thrown; no primary fallback; a diff run without new text; a diff failure failing the job; the SQL ignoring the prior 10-K; the SQL reading any section rather than the full text.
 
   **Next:** deploy. Then the backfill: stop the poller and run the script as a one-off container of the poller service (its 2/s SEC share), as F1b's backfill did. Then check the counts, a few diffs against their 10-Ks, that the endpoint serves them with no SEC request, and that the poller is running again.
+
+  **Verified in production (2026-10-01).** CI for merge commit `afa02aa` passed lint, unit, build and integration; its deploy finished at ~06:43 UTC. The parser worker's image contains the new call, and the poller's image contains the backfill script.
+  - **The endpoint only reads.** Microsoft (no stored diff) → **404 in 22 ms** with the new message; Apple → 200 in 9 ms. No SEC request in the API's log.
+  - **Backfill:**
+    - **Setup:** waited for poll cycle 225 to complete (06:45:08), stopped the poller, and ran the script as a one-off container of the poller service (`SEC_REQUESTS_PER_SECOND=2`, confirmed in the container).
+    - **Run:** 06:45:22 → 08:01:59 UTC, **76.7 min**, exit 0. **computed 180, already-stored 1 (Apple), not-enough-history 8, not-extractable 7, failed 0.**
+    - **SEC:** **0** log lines mentioning 403, 429, rate limits, resets or timeouts.
+    - **Speed:** median **16.6 s** per diff, mean 25.4 s, max 116.7 s. My 10–15 s estimate from Apple was low, so the run took 77 min rather than ~45.
+    - **Restart:** the poller restarted at 08:02; cycle 226 began at 08:02:19, and all services were up.
+  - **Data:** **181 diffs** for 181 companies, the replica identical; 377 stored 10-K texts.
+  - **Spot checks through the public API:**
+    - **Alphabet** (FY2025 vs FY2024): the chunks about the **Wiz** acquisition are `new`.
+    - **Tesla:** two chunks about **robotaxi** are `new`, five `modified`.
+    - **Sizes:** the responses are large: Alphabet 504 KB, Nvidia 329 KB, Tesla 186 KB. The frontend should not load every chunk at once; a later decision.
+
+  **Not computed (15 companies), each with a reason:**
+  - **7 big banks have "1 10-K on file"** — BAC, BLK, C, GS, JPM, MS and WFC.
+    - **Cause:** SEC's submissions document lists only a company's ~1,000 most recent filings in `recent`. These banks file thousands of prospectuses (424B2, FWP) a year, so last year's 10-K has already moved to the older pages (`filings.files`), which `findRecentFilings` does not read.
+    - **Fix:** read those pages, at about one more SEC request per bank. Logged, not done.
+  - **XOM has "0 10-Ks"** — the universe's new holding-company CIK, already logged under F1b-2.
+  - **7 are "not-extractable"** — AMAT, ED, EMR, ICE, INTU, O and XEL. No Risk Factors section was found in at least one of the two 10-Ks, so nothing was stored. Not investigated.
+
+  **Found by the spot checks: 62 of 181 diffs compare far more than Risk Factors.**
+  - **The symptom:** lopsided counts. Alphabet shows 115 removed against 18 added, and Nvidia 140 against 9. The "removed" chunks included MD&A text, such as Nvidia's "Israel and Regional Conflicts We are monitoring…".
+  - **The cause:** measured inside the production image, `extractRiskFactorsSection` found no end marker for these filings and returned everything **from Item 1A to the signature page**. Alphabet's "section" is 208,949 of 345,018 characters (about 60% of the 10-K) in both years. Tesla's correctly stops at the end of Item 1A, at about 21% of the document, which is also the median across all filings.
+  - **Count:** across the 181 compared pairs, **60 companies have both 10-Ks running to the end and 2 have one**. They match the lopsided diffs: 60 have at least 50 removed and more than three times as many removed as added.
+  - **Not a new bug:** this is Phase 5's section extraction, unchanged by F1c. The backfill is just the first time it ran on the whole universe; before, only Apple and JPMorgan had been tried. Real changes still show up (Alphabet's Wiz chunks are in Item 1A), but the counts and the "removed" list for these 62 are mostly noise from MD&A and the financial statements.
+  - **Recommendation:** fix the extraction's end detection and recompute these 62 before the frontend shows diffs. A recompute needs no SEC requests, because both texts are stored. Not done: it is a separate step, for the user to decide.
+
+  **Not yet exercised in production:** the parser worker computing a diff for a **newly filed** 10-K. None has arrived since this deploy, and most companies with September or October year ends file in November or December. Its unit tests cover it; the first real one will show in the parser worker's log as `Risk-factor diff`.
