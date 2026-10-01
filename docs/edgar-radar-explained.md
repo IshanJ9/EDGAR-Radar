@@ -54,7 +54,7 @@ These scores were tested against real historical cases, companies whose later tr
 ### 5. It notices what companies start (or stop) worrying about
 Every annual report has a section called **"Risk Factors"**, where a company lists everything that could go wrong for its business. EDGAR Radar compares each company's latest list with the previous year's and highlights **what's new and what disappeared.**
 
-It doesn't just compare word for word. It uses a type of artificial intelligence that understands *meaning*, so it can tell a reworded old warning from a genuinely new concern. In testing it correctly surfaced real events, such as Google's parent company adding risks about its **$32 billion acquisition of the security firm Wiz**, and Tesla adding risks around its **Robotaxi launch**.
+It doesn't just compare word for word. It uses a type of artificial intelligence that understands *meaning*, so it can tell a reworded old warning from a genuinely new concern. In testing it correctly surfaced real changes, such as Tesla adding risks around its **Robotaxi launch**, and Google's parent company adding a new risk that **AI is reshaping the advertising industry**.
 
 ### 6. It can alert people
 Users can create an account and keep a **watchlist** of companies they care about. When a watched company files something new, the system can send a notification.
