@@ -1449,7 +1449,7 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
 
   **A correction, found by this check: the "Wiz" example was never real.** Alphabet's FY2025 10-K mentions Wiz 7 times, but **none of them is in its Risk Factors section** (0 in either year's extracted section). The `new` Wiz chunks reported in Phase 5, and again in F1c's spot check above, came from the MD&A and financial-statement text the broken extraction pulled in. Phase 5's evidence for "5+ companies show a meaningful diff" leaned partly on that example, and the Tesla robotaxi example still stands. **Corrected:** the README's feature table and the plain-English explainer now cite Tesla's robotaxi risks and Alphabet's genuinely new risk that AI is reshaping the advertising industry; the F1c entry above is annotated. The Phase 5 entries are left as written, as a record of what was believed then.
 
-- [ ] Hardening, step 3, F2 — **The website: scaffold, design system, home page with instant search, Vercel.** Started 2026-10-01: the user approved the stack (React + Vite + TypeScript + Tailwind; Recharts arrives with F3's charts) and chose **Vitest** for `web/` (Jest stays the backend's; recorded as an exception to the locked stack). Built and tested locally; ticked once the user has connected Vercel and the deployed site's proxy is verified end to end.
+- [x] Hardening, step 3, F2 — **The website: scaffold, design system, home page with instant search, Vercel.** **Live at https://edgar-radar.vercel.app, verified 2026-10-01** (end of this entry). Started 2026-10-01: the user approved the stack (React + Vite + TypeScript + Tailwind; Recharts arrives with F3's charts) and chose **Vitest** for `web/` (Jest stays the backend's; recorded as an exception to the locked stack). Built and tested locally; ticked once the user has connected Vercel and the deployed site's proxy is verified end to end.
 
   **What was built, in `web/`:**
   - **Scaffold:** Vite's official `react-ts` template (React 19, Vite 8, TypeScript 6, oxlint), plus Tailwind v4, React Router v8, and the mockups' fonts (Space Grotesk, IBM Plex Sans and Mono) self-hosted through Fontsource, so no request goes to Google. `npm audit --omit=dev`: 0 vulnerabilities. Production build: 87 KB of gzipped JavaScript plus fonts.
@@ -1498,3 +1498,15 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
   1. Create a free Vercel account (Hobby plan; sign up with GitHub).
   2. Import the GitHub repo with **Root Directory = `web`**. Vercel detects Vite: build `npm run build`, output `dist`. The production branch is `Main`.
   3. I then verify, on the `.vercel.app` URL: the home page loads; `/api/stats` and `/api/companies` answer through the proxy (plain HTTP to the API); a deep link such as `/company/AAPL` loads directly (the `index.html` fallback); and search works. Only then is F2 ticked and the live URL added to the README.
+
+  **Verified on the live site (2026-10-01).** The user created the Vercel project (Hobby, free) with Root Directory `web` and chose the address **https://edgar-radar.vercel.app**. Checked from outside, without access to the user's Vercel account:
+  - **The proxy works over plain HTTP:**
+    - `/api/stats`, `/api/companies` (59 KB), `/api/companies/320193/scores` and `/api/companies/320193/risk-factor-diff` (155 KB) all answer 200 with the API's JSON, in 0.09–0.19 s.
+    - The site itself is HTTPS, and the browser only ever talks to it, so there is no mixed-content problem.
+    - This settles the one point Vercel's documentation showed only with HTTPS examples.
+  - **Deep links work:** `/company/AAPL` and any other path load the app (the `index.html` fallback); `/favicon.svg` is served.
+  - **It is the tested build:** the served script, `index-dci1rwcl.js`, has the same content hash as the local production build.
+  - **In a real browser:** the home page shows live numbers (196 companies; 427 filings in the last 24 hours at the time). Typing "nvda" then Enter opens `/company/NVDA` ("NVIDIA Corp", "Semiconductors & Related Devices", title "NVIDIA Corp - EDGAR Radar"). `/company/zzzz` shows the not-found page. No console errors.
+  - **README:** now leads with the live site.
+
+  **Logged, not changed:** an unknown address answers **HTTP 200** with the not-found page drawn by the app, the usual single-page-app "soft 404". Search engines may index such addresses; worth revisiting in F5 (page titles and link previews).
