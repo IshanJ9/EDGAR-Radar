@@ -10,7 +10,14 @@
  * Only ever run via `npm run test:integration`, never `npm test`.
  */
 import { pool } from '../db';
-import { upsertFact, getFactsByCik, getCompanyByCik, updateCompanyIndustry, getIndustries } from '../repositories/companyRepository';
+import {
+  upsertFact,
+  getFactsByCik,
+  getCompanyByCik,
+  updateCompanyIndustry,
+  getIndustries,
+  getLatestAnnualReportFiledDate,
+} from '../repositories/companyRepository';
 import { UsGaapFact } from '../sec';
 
 const CIK = '0000000001';
@@ -193,5 +200,22 @@ describe('updateCompanyIndustry + getIndustries (post-Phase 7 hardening, step 3,
 
     expect(await getCompanyByCik('0000009999')).toBeNull();
     expect((await getIndustries()).size).toBe(0);
+  });
+});
+
+describe('getLatestAnnualReportFiledDate (post-Phase 7 hardening, step 3, F3)', () => {
+  test("the newest filed date among the company's 10-K facts, as YYYY-MM-DD - a 10-Q does not count", async () => {
+    await seedCompany(CIK);
+    await upsertFact(CIK, 'Revenues', fact({ filed: '2024-02-01', accn: '0000000001-24-000001', end: '2023-12-31', fy: 2023 }));
+    await upsertFact(CIK, 'Revenues', fact({ filed: '2025-02-01', accn: '0000000001-25-000001' }));
+    await upsertFact(CIK, 'Revenues', fact({ form: '10-Q', fp: 'Q1', filed: '2025-05-01', accn: '0000000001-25-000009', end: '2025-03-31', fy: 2025 }));
+
+    expect(await getLatestAnnualReportFiledDate(CIK)).toBe('2025-02-01');
+  });
+
+  test('null when the company has no 10-K facts', async () => {
+    await seedCompany(CIK);
+
+    expect(await getLatestAnnualReportFiledDate(CIK)).toBeNull();
   });
 });

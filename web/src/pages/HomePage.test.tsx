@@ -97,7 +97,7 @@ describe('routing', () => {
     expect(screen.getByRole('link', { name: /back to the home page/i })).toHaveAttribute('href', '/');
   });
 
-  test("a company's address shows its name until the full page arrives (F3)", async () => {
+  test("a company's address opens its page", async () => {
     stubApi();
     resetDataCache();
     render(

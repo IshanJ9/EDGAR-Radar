@@ -133,8 +133,9 @@ export async function upsertFact(cik: string, tag: string, fact: UsGaapFact, uni
   // scores are computed from its facts, so they go too. The 196-company list
   // is deliberately NOT cleared here: the parser worker writes facts for every
   // filing it processes, so on a busy day that kept the list (1.5-2.2 s to
-  // rebuild) permanently cold. Its ratings expire with the TTL instead.
-  await responseCache.invalidate(cacheKeys.facts(cik), cacheKeys.scores(cik));
+  // rebuild) permanently cold. Its ratings expire with the TTL instead. The
+  // company page's financials (F3) are built from the same facts, so they go too.
+  await responseCache.invalidate(cacheKeys.facts(cik), cacheKeys.scores(cik), cacheKeys.financials(cik));
 }
 
 /**
@@ -209,6 +210,19 @@ export async function updateCompanyIndustry(cik: string, sic: string, sicDescrip
   if (result.rowCount) {
     await responseCache.invalidate(cacheKeys.company(paddedCik), cacheKeys.facts(paddedCik));
   }
+}
+
+/**
+ * When the company's latest annual report was filed, as YYYY-MM-DD - the
+ * newest filed date among its stored 10-K facts - or null if none is stored.
+ * For the company page (post-Phase 7 hardening, step 3, F3).
+ */
+export async function getLatestAnnualReportFiledDate(cik: string, db: Queryable = pool): Promise<string | null> {
+  const result = await db.query<{ filed: string | null }>(
+    `SELECT max(filed_date)::text AS filed FROM filing_facts WHERE cik = $1 AND form = '10-K'`,
+    [padCik(cik)],
+  );
+  return result.rows[0]?.filed ?? null;
 }
 
 /** Every stored company's industry, by padded CIK - for the company list. */

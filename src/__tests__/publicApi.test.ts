@@ -26,6 +26,7 @@ jest.mock('../repositories/companyRepository', () => ({
   getIndustries: jest.fn(),
   upsertCompanyFacts: jest.fn(),
 }));
+jest.mock('../companyFinancials', () => ({ getCompanyFinancials: jest.fn() }));
 jest.mock('../repositories/statsRepository', () => ({
   getPipelineStats: jest.fn(),
   getRecentFilings: jest.fn(),
@@ -50,6 +51,7 @@ import * as statsRepository from '../repositories/statsRepository';
 import * as sec from '../sec';
 import * as riskFactorDiffRepository from '../repositories/riskFactorDiffRepository';
 import { diffRiskFactorFilings } from '../riskFactorDiff';
+import { getCompanyFinancials } from '../companyFinancials';
 
 const APPLE_ALTMAN = {
   status: 'ok',
@@ -128,6 +130,33 @@ describe('GET /companies/:cik/risk-factor-diff', () => {
     expect(diffRiskFactorFilings).not.toHaveBeenCalled();
     expect(riskFactorDiffRepository.upsertRiskFactorDiff).not.toHaveBeenCalled();
     expectNoSecRequests();
+  });
+});
+
+// Post-Phase 7 hardening, step 3 (F3): the company page's charts.
+describe('GET /companies/:cik/financials', () => {
+  test("returns a stored company's annual figures", async () => {
+    jest.mocked(companyRepository.getCompanyByCik).mockResolvedValue({ cik: '0000320193', entityName: 'Apple Inc.', industry: null });
+    const financials = { cik: '0000320193', revenue: [{ fiscalYear: 2025, value: 416161000000 }] };
+    jest.mocked(getCompanyFinancials).mockResolvedValue(financials as never);
+
+    const res = await request(app).get('/companies/320193/financials').expect(200);
+
+    expect(res.body).toEqual(financials);
+    expect(getCompanyFinancials).toHaveBeenCalledWith('0000320193');
+  });
+
+  test('a company that is not stored is a 404 - never a fetch from SEC', async () => {
+    jest.mocked(companyRepository.getCompanyByCik).mockResolvedValue(null);
+
+    await request(app).get('/companies/0000000001/financials').expect(404);
+
+    expect(getCompanyFinancials).not.toHaveBeenCalled();
+    expectNoSecRequests();
+  });
+
+  test('rejects a CIK that is not 1-10 digits', async () => {
+    await request(app).get('/companies/apple/financials').expect(400);
   });
 });
 

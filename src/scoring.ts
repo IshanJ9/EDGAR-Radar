@@ -43,13 +43,13 @@ async function fetchSeries(cik: string, concepts: Record<string, string[]>, asOf
 }
 
 /** `combine(a, b)` for every fiscal year both series have, newest first. */
-function combineByYear(a: AnnualValue[], b: AnnualValue[], combine: (x: number, y: number) => number): AnnualValue[] {
+export function combineByYear(a: AnnualValue[], b: AnnualValue[], combine: (x: number, y: number) => number): AnnualValue[] {
   const byYear = new Map(b.map((v) => [v.fiscalYear, v.value]));
   return a.filter((v) => byYear.has(v.fiscalYear)).map((v) => ({ fiscalYear: v.fiscalYear, value: combine(v.value, byYear.get(v.fiscalYear)!) }));
 }
 
 /** The newest fiscal year in a series, or -Infinity for an empty one. */
-function newestYear(values: AnnualValue[]): number {
+export function newestYear(values: AnnualValue[]): number {
   return Math.max(-Infinity, ...values.map((v) => v.fiscalYear));
 }
 

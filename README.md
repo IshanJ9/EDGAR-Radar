@@ -111,6 +111,7 @@ Base URL: `http://80.225.253.10:3000`. CIKs are SEC company IDs, e.g. `000032019
 | `GET` | `/companies` | All 196 monitored companies, each with a summary of its three health scores. |
 | `GET` | `/companies/:cik` | Company name. Fetched from SEC on first request, then stored. |
 | `GET` | `/companies/:cik/scores` | Altman Z″, Piotroski F and Beneish M with their inputs; "insufficient history" when a score can't be computed fairly. Stored companies only. |
+| `GET` | `/companies/:cik/financials` | Five years of revenue, profit, assets, liabilities, long-term debt and operating cash flow, for charts. Stored data only. |
 | `GET` | `/companies/:cik/facts` | Normalized financial facts. Served from cache (`X-Cache: HIT/MISS`). |
 | `GET` | `/companies/:cik/risk-factor-diff` | New and removed risk factors between the last two 10-Ks. Computed when a 10-K arrives; this only reads (404 until one is stored). |
 | `GET` | `/filings/recent` | Filings discovered in the last `hours` (default 24, max 168), newest first, with plain categories. `exclude=offering` folds away routine bond paperwork. |
@@ -144,11 +145,11 @@ The image build downloads the embedding model once, from Hugging Face.
 
 ```bash
 npm install
-npm test                  # 262 unit tests; no network, SEC is mocked with nock
-npm run test:integration  # 35 tests against a throwaway Postgres in Docker
+npm test                  # 270 unit tests; no network, SEC is mocked with nock
+npm run test:integration  # 37 tests against a throwaway Postgres in Docker
 npm run lint
 
-cd web && npm test        # 35 frontend tests (Vitest + Testing Library); no network
+cd web && npm test        # 71 frontend tests (Vitest + Testing Library); no network
 ```
 
 ---

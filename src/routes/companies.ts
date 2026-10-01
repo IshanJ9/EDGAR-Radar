@@ -6,6 +6,7 @@ import { getStoredRiskFactorDiff } from '../riskFactorDiffService';
 import { cacheKeys } from '../cache';
 import { sendAndCache, sendIfCached } from './cachedResponse';
 import { computeCompanyScores, summarizeScore } from '../companyScores';
+import { getCompanyFinancials } from '../companyFinancials';
 import { loadUniverse } from '../universe';
 
 const router = Router();
@@ -100,6 +101,36 @@ router.get('/:cik/scores', async (req, res) => {
     sendAndCache(res, key, { cik: paddedCik, scores: await computeCompanyScores(paddedCik) });
   } catch (err) {
     req.log.error({ err }, 'Failed to compute scores');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * Five years of a company's headline figures - revenue, profit, assets,
+ * liabilities, long-term debt, operating cash flow - for the company page's
+ * charts (post-Phase 7 hardening, step 3, F3). Stored facts only: a company
+ * not stored is a 404, never a fetch from SEC.
+ */
+router.get('/:cik/financials', async (req, res) => {
+  const { cik } = req.params;
+  if (!isValidCik(cik)) {
+    res.status(400).json({ error: 'CIK must be 1-10 digits' });
+    return;
+  }
+
+  const key = cacheKeys.financials(cik);
+  if (await sendIfCached(res, key)) return;
+
+  try {
+    const paddedCik = padCik(cik);
+    const company = (await getCompanyByCik(paddedCik, readDb)) ?? (await getCompanyByCik(paddedCik, pool));
+    if (!company) {
+      res.status(404).json({ error: `No stored company with CIK ${paddedCik}.` });
+      return;
+    }
+    sendAndCache(res, key, await getCompanyFinancials(paddedCik));
+  } catch (err) {
+    req.log.error({ err }, 'Failed to get financials');
     res.status(500).json({ error: 'Internal server error' });
   }
 });
