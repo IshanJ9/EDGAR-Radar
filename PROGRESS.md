@@ -1704,3 +1704,11 @@ Added to ROADMAP.md on 2026-09-30 at the user's request: the six follow-ups list
 
   **Verified in production 2026-10-02** (merge 72152c8, CI and deploy green): migration `1790900000000_poller-run-failures` ran at 20:12 UTC; the first cycle on the new code (run 253) completed with 196 checked, `companies_failed` 0, 21 new filings; the heartbeat restarted and both checks run without error (the failure check logs only when failing); the parser worker logged "facts not refreshed" for all 21 filings in the 20 minutes after deploy (424B2, FWP, Form 4, 144) and made zero companyfacts downloads. A live drill of the failure alert was not run: it needs SEC really failing, or fake runs in production that send a real Slack alert, and the user has not asked for it.
 
+- [x] Hardening, step 3, F5 — **The real test.** Done by the user 2026-10-02: a non-technical person used the site unaided, and the user reported nothing to fix. This completes the frontend (F1-F5).
+
+  **Known gaps, accepted by the user 2026-10-02 as they are** (logged earlier, not to be fixed unless asked):
+  - 7 large banks have no risk-factor comparison: their previous 10-K is older than SEC's `recent` submissions list.
+  - Exxon's holding-company CIK has no annual history.
+  - 7 companies' risk-factor sections cannot be extracted (GE, Intel, McDonald's, Honeywell: index layout; BNY, U.S. Bancorp: incorporated by reference; ICE).
+  - The company list takes about 2.5 s on a cold load.
+
