@@ -13,3 +13,23 @@ logs/
 # test` runs without --coverage), but a local `jest --coverage` run would
 # create this directory and it should never be committed.
 coverage/
+
+# Local AI-assistant files - personal working setup, not part of the project.
+# CLAUDE.md stays on the developer's machine, where Claude Code still reads it.
+CLAUDE.md
+.claude/
+
+# Editors and operating systems
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Vercel CLI link (holds project and org IDs) and other local-only files
+.vercel/
+*.local
+
+# TypeScript incremental build info
+*.tsbuildinfo
